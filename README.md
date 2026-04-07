@@ -3,7 +3,7 @@ A Minecraft server core built for ultimate performance and cross-language extens
 [一个追求极致运行效率 与跨语言扩展性设计的 Minecraft 服务端程序]
 
 ![Go](https://img.shields.io/badge/Go-1.26-blue?style=flat-square&logo=go&logoColor=white) 
-![GoLand](https://img.shields.io/badge/GoLand-?logo=goland&logoColor=white&style=flat-square)
+![GoLand](https://img.shields.io/badge/GoLand-000000?logo=goland&logoColor=white&style=flat-square)
 ![Wasm](https://img.shields.io/badge/wasmtime-654FF0?style=flat-square&logo=webassembly&logoColor=white)
 
 **Group and Project Discussion**\
