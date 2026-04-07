@@ -2,6 +2,8 @@
 A Minecraft server core built for ultimate performance and cross-language extensibility\
 [一个追求极致运行效率 与跨语言扩展性设计的 Minecraft 服务端程序]
 
+![Go](https://img.shields.io/badge/Go-1.26-blue?style=flat-square&logo=go&logoColor=white)
+
 **Group and Project Discussion**\
 [交流群与讨论]
 - [QQ Group](https://qm.qq.com/q/UtIAQdsfm0) or [Discord](https://discord.gg/ZjyZyjz)
