@@ -4,7 +4,9 @@ A Minecraft server core built for ultimate performance and cross-language extens
 
 ![Go](https://img.shields.io/badge/Go-1.26-blue?style=flat-square&logo=go&logoColor=white) 
 ![GoLand](https://img.shields.io/badge/GoLand-000000?logo=goland&logoColor=white&style=flat-square)
-![Minecraft](https://img.shields.io/badge/Minecraft-62B47A?style=flat-square&logo=minecraft&logoColor=white)
+![Go](https://img.shields.io/badge/Go-00ADD8?style=flat-square&logo=go&logoColor=white)
+![Wasm](https://img.shields.io/badge/Wasm-654FF0?style=flat-square&logo=webassembly&logoColor=white)
+![Minecraft](https://img.shields.io/badge/-GrassBlock-62B47A?style=flat-square&logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1NDYgNjUxIj48cGF0aCBkPSJNMjczIDBIMDB2NjUxaDU0NlYwSDI3M3oiIGZpbGw9IiM2QkI0N0EiLz48cGF0aCBkPSJNMjczIDBoNTQ2djY1MUgyNzN6IiBmaWxsPSIjOEI3NjVFIi8+PHBhdGggZD0iTTI3IDBoMjczLjV2NjUxSDI3M3oiIGZpbGw9IiM2QjU2NEYiLz48cGF0aCBkPSJNMCAwaDI3My41djY1MUgweiIgZmlsbD0iIzhCNzY1RSIvPjxwYXRoIGQ9Ik0wIDBoMjczLjV2NjUxSDB6IiBmaWxsPSIjNkI1NjRGLz48L3N2Zz4=)
 ![Wasm](https://img.shields.io/badge/wasmtime-654FF0?style=flat-square&logo=webassembly&logoColor=white)
 
 **Group and Project Discussion**\
