@@ -2,7 +2,8 @@
 A Minecraft server core built for ultimate performance and cross-language extensibility\
 [一个追求极致运行效率 与跨语言扩展性设计的 Minecraft 服务端程序]
 
-![Go](https://img.shields.io/badge/Go-1.26-blue?style=flat-square&logo=go&logoColor=white) ![GoLand](https://img.shields.io/badge/GoLand-000000?logo=goland&logoColor=white&style=flat-square)
+![Go](https://img.shields.io/badge/Go-1.26-blue?style=flat-square&logo=go&logoColor=white) 
+[![GoLand](https://img.shields.io/badge/GoLand-000000?style=for-the-badge&logo=goland&logoColor=white)](https://www.jetbrains.com/go/)
 
 **Group and Project Discussion**\
 [交流群与讨论]
