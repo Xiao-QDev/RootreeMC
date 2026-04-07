@@ -20,5 +20,5 @@ A Minecraft server core built for ultimate performance and cross-language extens
 ------
 Plugin Development [Wasm]
 ------
-特别感谢[HKMC Cloud](https://cloud.hkmc.online/)赞助开发 购买服务器记得选择销售“Xiao_Q”!
-
+衷心致谢 [HKMC Cloud](https://cloud.hkmc.online/) 倾情赞助本次开发！/n
+采购服务器认准官方销售：“Xiao_Q”，专业靠谱，服务无忧。
