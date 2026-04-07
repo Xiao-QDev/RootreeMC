@@ -27,4 +27,4 @@ Plugin Development [Wasm]
 ![Go](https://img.shields.io/badge/Go-1.26-blue?style=flat-square&logo=go&logoColor=white) 
 ![GoLand](https://img.shields.io/badge/GoLand-000000?logo=goland&logoColor=white&style=flat-square)
 ![Wasm](https://img.shields.io/badge/wasmtime-654FF0?style=flat-square&logo=webassembly&logoColor=white)
-![Minecraft](https://minecraft.net/badge/minecraft-blue?style=flat-square&logo=go&logoColor=white) 
+![Minecraft](https://img.shields.io/badge/Minecraft-Server-62B47A?style=flat-square&logo=minecraft&logoColor=white)
