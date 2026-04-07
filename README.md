@@ -18,7 +18,7 @@ A Minecraft server core built for ultimate performance and cross-language extens
 3. Run the program:  ./ RootreeMC
    (Or double-click the executable in your file manager for GUI applications.)
 ------
-
-特别感谢HKMC Cloud赞助开发
 Plugin Development [Wasm]
+------
+特别感谢HKMC Cloud赞助开发
 
