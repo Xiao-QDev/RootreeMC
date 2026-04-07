@@ -1,4 +1,4 @@
-# RootreeMC *特别感谢HKMC Cloud赞助开发
+# RootreeMC 
 A Minecraft server core built for ultimate performance and cross-language extensibility\
 [一个追求极致运行效率 与跨语言扩展性设计的 Minecraft 服务端程序]
 
@@ -17,5 +17,8 @@ A Minecraft server core built for ultimate performance and cross-language extens
 2. Grant execution permission:  chmod +x RootreeMC
 3. Run the program:  ./ RootreeMC
    (Or double-click the executable in your file manager for GUI applications.)
+
+
+*特别感谢HKMC Cloud赞助开发
 Plugin Development [Wasm]
 ------
