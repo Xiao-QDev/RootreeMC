@@ -2,9 +2,13 @@
 package serverconfig
 
 import (
+	"crypto/rand"
+	"encoding/binary"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/spf13/viper"
 )
@@ -26,6 +30,7 @@ type ServerConfig struct {
 	ServerPort                  int    `mapstructure:"server-port" yaml:"server-port"`
 	WhiteList                   bool   `mapstructure:"white-list" yaml:"white-list"`
 	TickMode                    string `mapstructure:"tick-mode" yaml:"tick-mode"`
+	TerrainSeed                 int64  `mapstructure:"terrain-seed" yaml:"terrain-seed"`
 }
 
 // DefaultConfig 默认配置
@@ -44,6 +49,7 @@ var DefaultConfig = &ServerConfig{
 	ServerPort:                  25565,
 	WhiteList:                   false,
 	TickMode:                    "singlethread",
+	TerrainSeed:                 0,
 }
 
 // LoadConfig 从配置文件加载服务器配置
@@ -54,6 +60,14 @@ func LoadConfig(configPath string) (*ServerConfig, error) {
 	err := viper.ReadInConfig()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %v", err)
+	}
+
+	if shouldGenerateTerrainSeed() {
+		seed := generateTerrainSeed()
+		viper.Set("terrain-seed", seed)
+		if err := viper.WriteConfig(); err != nil {
+			return nil, fmt.Errorf("failed to persist generated terrain-seed: %v", err)
+		}
 	}
 
 	config := &ServerConfig{}
@@ -81,8 +95,43 @@ func SaveConfig(config *ServerConfig, configPath string) error {
 	viper.Set("server-port", config.ServerPort)
 	viper.Set("white-list", config.WhiteList)
 	viper.Set("tick-mode", config.TickMode)
+	viper.Set("terrain-seed", config.TerrainSeed)
 
 	return viper.WriteConfigAs(configPath)
+}
+
+func shouldGenerateTerrainSeed() bool {
+	if !viper.IsSet("terrain-seed") {
+		return true
+	}
+
+	raw := viper.Get("terrain-seed")
+	if raw == nil {
+		return true
+	}
+
+	if str, ok := raw.(string); ok && strings.TrimSpace(str) == "" {
+		return true
+	}
+
+	return false
+}
+
+func generateTerrainSeed() int64 {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		seed := time.Now().UnixNano() & 0x7fffffffffffffff
+		if seed == 0 {
+			return 1
+		}
+		return seed
+	}
+
+	seed := int64(binary.LittleEndian.Uint64(b[:]) & 0x7fffffffffffffff)
+	if seed == 0 {
+		return 1
+	}
+	return seed
 }
 
 // CreateDefaultConfig 创建默认配置文件
@@ -121,6 +170,9 @@ white-list: false
 
 # Tick Mode: singlethread | multithread
 tick-mode: singlethread
+
+# Terrain seed: leave empty to auto-generate on first startup
+terrain-seed:
 `
 	_, err = file.WriteString(content)
 	return err

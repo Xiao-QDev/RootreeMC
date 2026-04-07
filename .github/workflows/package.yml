@@ -1,0 +1,167 @@
+name: Build and Package
+
+on:
+  push:
+    branches:
+      - "**"
+    tags-ignore:
+      - "**"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  APP_NAME: RootreeMC
+
+jobs:
+  discover-main:
+    name: Discover Main Package
+    runs-on: ubuntu-latest
+    outputs:
+      has_main: ${{ steps.find.outputs.has_main }}
+      main_pkg: ${{ steps.find.outputs.main_pkg }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Detect main package
+        id: find
+        shell: bash
+        run: |
+          set -euo pipefail
+          MAIN_PKG="$(go list -f '{{if eq .Name "main"}}{{.ImportPath}}{{end}}' ./... | sed '/^$/d' | head -n 1 || true)"
+          if [[ -n "$MAIN_PKG" ]]; then
+            echo "has_main=true" >> "$GITHUB_OUTPUT"
+            echo "main_pkg=$MAIN_PKG" >> "$GITHUB_OUTPUT"
+            echo "Found main package: $MAIN_PKG"
+          else
+            echo "has_main=false" >> "$GITHUB_OUTPUT"
+            echo "main_pkg=" >> "$GITHUB_OUTPUT"
+            echo "No main package found, binary build steps will be skipped."
+          fi
+
+  source-package:
+    name: Package Source
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          ARCHIVE_NAME="${APP_NAME}-source-${GITHUB_SHA::7}.zip"
+          git archive --format=zip --output="dist/${ARCHIVE_NAME}" HEAD
+
+      - name: Upload source artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-source
+          path: dist/*.zip
+          if-no-files-found: error
+
+  build-binaries:
+    name: Build Binaries (${{ matrix.goos }}-${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    needs: discover-main
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            ext: ""
+          - goos: windows
+            goarch: amd64
+            ext: ".exe"
+    steps:
+      - name: Checkout
+        if: needs.discover-main.outputs.has_main == 'true'
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        if: needs.discover-main.outputs.has_main == 'true'
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build binary
+        if: needs.discover-main.outputs.has_main == 'true'
+        shell: bash
+        env:
+          MAIN_PKG: ${{ needs.discover-main.outputs.main_pkg }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          BIN_NAME="${APP_NAME}-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}"
+          CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
+            go build -trimpath -ldflags "-s -w" -o "dist/${BIN_NAME}" "${MAIN_PKG}"
+
+      - name: Upload binary artifact
+        if: needs.discover-main.outputs.has_main == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/${{ env.APP_NAME }}-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}
+          if-no-files-found: error
+
+      - name: No main package found
+        if: needs.discover-main.outputs.has_main != 'true'
+        shell: bash
+        run: echo "Skipped ${APP_NAME} binary build because no main package was found."
+
+  release:
+    name: Publish Rolling Release
+    runs-on: ubuntu-latest
+    needs:
+      - source-package
+      - build-binaries
+    steps:
+      - name: Checkout (for tag update)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download packaged artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          pattern: package-*
+          merge-multiple: true
+
+      - name: Move rolling release tag
+        shell: bash
+        env:
+          TAG_NAME: ci-latest
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -fa "$TAG_NAME" -m "Auto build for ${GITHUB_SHA}"
+          git push origin "refs/tags/${TAG_NAME}" --force
+
+      - name: Create or update GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ci-latest
+        run: |
+          set -euo pipefail
+          RELEASE_TITLE="CI Latest Build"
+          RELEASE_NOTES="Auto package from branch ${GITHUB_REF_NAME} at commit ${GITHUB_SHA}."
+
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release edit "$TAG_NAME" --title "$RELEASE_TITLE" --notes "$RELEASE_NOTES" --prerelease
+            gh release upload "$TAG_NAME" release-assets/* --clobber
+          else
+            gh release create "$TAG_NAME" release-assets/* --title "$RELEASE_TITLE" --notes "$RELEASE_NOTES" --prerelease
+          fi

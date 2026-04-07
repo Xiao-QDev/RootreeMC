@@ -3,7 +3,8 @@ package world
 
 import (
 	"math"
-	"math/rand"
+	"math/bits"
+	"sync"
 )
 
 // 方块状态定义 (ID << 4 | Metadata)
@@ -35,193 +36,388 @@ const (
 	BlockSnow         uint16 = 78 << 4
 )
 
-//噪声工具
+const (
+	terrainLayers       = 5
+	seaLevel            = 63
+	minTerrainHeight    = 5
+	maxTerrainHeight    = 250
+	treeCellSize        = 4
+	defaultTerrainSeed  = int64(20260407)
+	macroNormFactor     = 1.0 / 1.5    // 1/(1+1/2)
+	detailNormFactor    = 1.0 / 0.4375 // 1/(1/4+1/8+1/16)
+	unitFloatNormalizer = 1.0 / (1 << 53)
+)
 
-type PerlinNoise struct {
-	p [512]int
+var (
+	layerFrequency = [terrainLayers]float64{1.0 / 1024.0, 1.0 / 512.0, 1.0 / 256.0, 1.0 / 128.0, 1.0 / 64.0}
+	layerAmplitude = [terrainLayers]float64{1.0, 0.5, 0.25, 0.125, 0.0625}
+)
+
+type biomeID uint8
+
+const (
+	biomeDeepOcean biomeID = iota
+	biomeOcean
+	biomeBeach
+	biomePlains
+	biomeForest
+	biomeTaiga
+	biomeDesert
+	biomeJungle
+	biomeMountains
+)
+
+// ----- 低开销随机与哈希 -----
+
+type splitMix64 struct {
+	state uint64
 }
 
-func NewPerlinNoise(seed int64) *PerlinNoise {
-	n := &PerlinNoise{}
-	for i := 0; i < 256; i++ {
-		n.p[i] = i
+func (s *splitMix64) next() uint64 {
+	s.state += 0x9e3779b97f4a7c15
+	z := s.state
+	z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9
+	z = (z ^ (z >> 27)) * 0x94d049bb133111eb
+	return z ^ (z >> 31)
+}
+
+func mix64(x uint64) uint64 {
+	x ^= x >> 30
+	x *= 0xbf58476d1ce4e5b9
+	x ^= x >> 27
+	x *= 0x94d049bb133111eb
+	x ^= x >> 31
+	return x
+}
+
+func hash2DWithSeed(x, z int, seed uint64) uint64 {
+	h := seed
+	h ^= uint64(int64(x)) * 0x9e3779b185ebca87
+	h = bits.RotateLeft64(h, 27)
+	h ^= uint64(int64(z)) * 0xc2b2ae3d27d4eb4f
+	return mix64(h)
+}
+
+func hash3DWithSeed(x, y, z int, seed uint64) uint64 {
+	h := seed
+	h ^= uint64(int64(x)) * 0x9e3779b185ebca87
+	h = bits.RotateLeft64(h, 25)
+	h ^= uint64(int64(y)) * 0xd1b54a32d192ed03
+	h = bits.RotateLeft64(h, 23)
+	h ^= uint64(int64(z)) * 0x94d049bb133111eb
+	return mix64(h)
+}
+
+func unitFloat01(v uint64) float64 {
+	return float64(v>>11) * unitFloatNormalizer
+}
+
+func fastFloor(v float64) int {
+	i := int(v)
+	if v < float64(i) {
+		return i - 1
 	}
-	r := rand.New(rand.NewSource(seed))
-	r.Shuffle(256, func(i, j int) { n.p[i], n.p[j] = n.p[j], n.p[i] })
+	return i
+}
+
+func floorDiv(v, divisor int) int {
+	if divisor <= 0 {
+		return 0
+	}
+	q := v / divisor
+	r := v % divisor
+	if r < 0 {
+		q--
+	}
+	return q
+}
+
+func fade(t float64) float64 {
+	return t * t * t * (t*(t*6.0-15.0) + 10.0)
+}
+
+func lerp(t, a, b float64) float64 {
+	return a + t*(b-a)
+}
+
+func grad2(hash uint8, x, y float64) float64 {
+	h := hash & 7
+	u := x
+	v := y
+	if h >= 4 {
+		u, v = y, x
+	}
+	if h&1 != 0 {
+		u = -u
+	}
+	if h&2 != 0 {
+		v = -v
+	}
+	return u + v
+}
+
+// ----- Perlin -----
+
+type PerlinNoise struct {
+	p [512]uint8
+}
+
+func NewPerlinNoise(seed int64) PerlinNoise {
+	var n PerlinNoise
+	var base [256]uint8
 	for i := 0; i < 256; i++ {
-		n.p[256+i] = n.p[i]
+		base[i] = uint8(i)
+	}
+
+	rng := splitMix64{state: uint64(seed)}
+	for i := 255; i > 0; i-- {
+		j := int(rng.next() % uint64(i+1))
+		base[i], base[j] = base[j], base[i]
+	}
+
+	for i := 0; i < 256; i++ {
+		n.p[i] = base[i]
+		n.p[256+i] = base[i]
 	}
 	return n
 }
 
 func (n *PerlinNoise) Noise2D(x, y float64) float64 {
-	ix := int(math.Floor(x))
-	iy := int(math.Floor(y))
-	xf := x - float64(ix)
-	yf := y - float64(iy)
-	X := ix & 255
-	Y := iy & 255
+	xi := fastFloor(x)
+	yi := fastFloor(y)
 
-	u := xf * xf * xf * (xf*(xf*6-15) + 10)
-	v := yf * yf * yf * (yf*(yf*6-15) + 10)
+	xf := x - float64(xi)
+	yf := y - float64(yi)
 
-	A := n.p[X] + Y
-	B := n.p[X+1] + Y
+	u := fade(xf)
+	v := fade(yf)
 
-	g00 := grad2D(n.p[A], xf, yf)
-	g10 := grad2D(n.p[B], xf-1, yf)
-	g01 := grad2D(n.p[A+1], xf, yf-1)
-	g11 := grad2D(n.p[B+1], xf-1, yf-1)
+	X := xi & 255
+	Y := yi & 255
 
-	lx1 := g00 + u*(g10-g00)
-	lx2 := g01 + u*(g11-g01)
+	aa := n.p[int(n.p[X])+Y]
+	ab := n.p[int(n.p[X])+Y+1]
+	ba := n.p[int(n.p[X+1])+Y]
+	bb := n.p[int(n.p[X+1])+Y+1]
 
-	return lx1 + v*(lx2-lx1)
+	x1 := lerp(u, grad2(aa, xf, yf), grad2(ba, xf-1.0, yf))
+	x2 := lerp(u, grad2(ab, xf, yf-1.0), grad2(bb, xf-1.0, yf-1.0))
+
+	return lerp(v, x1, x2)
 }
 
-func grad2D(h int, x, y float64) float64 {
-	switch h & 7 {
-	case 0:
-		return x + y
-	case 1:
-		return -x + y
-	case 2:
-		return x - y
-	case 3:
-		return -x - y
-	case 4:
-		return x
-	case 5:
-		return -x
-	case 6:
-		return y
-	case 7:
-		return -y
+// ----- 地形生成器 -----
+
+type terrainGenerator struct {
+	seed     int64
+	layers   [terrainLayers]PerlinNoise
+	temp     PerlinNoise
+	humidity PerlinNoise
+}
+
+type terrainNoiseSample struct {
+	macro    float64
+	detail   float64
+}
+
+func newTerrainGenerator(seed int64) *terrainGenerator {
+	rng := splitMix64{state: uint64(seed)}
+	g := &terrainGenerator{seed: seed}
+	for i := 0; i < terrainLayers; i++ {
+		g.layers[i] = NewPerlinNoise(int64(rng.next()))
 	}
-	return 0
+	g.temp = NewPerlinNoise(int64(rng.next()))
+	g.humidity = NewPerlinNoise(int64(rng.next()))
+	return g
 }
 
-func (n *PerlinNoise) FBM(x, y float64, octaves int) float64 {
-	total := 0.0
-	freq := 1.0
-	amp := 1.0
-	maxAmp := 0.0
-	for i := 0; i < octaves; i++ {
-		total += n.Noise2D(x*freq, y*freq) * amp
-		maxAmp += amp
-		amp *= 0.5
-		freq *= 2.0
-	}
-	return total / maxAmp
-}
+func (g *terrainGenerator) sampleFiveLayerNoise(wx, wz int) terrainNoiseSample {
+	x := float64(wx)
+	z := float64(wz)
 
-//地形数据
+	macro := 0.0
+	detail := 0.0
 
-var (
-	contNoise    = NewPerlinNoise(1234) // 大陆性噪声 (海陆分布)
-	erosionNoise = NewPerlinNoise(5678) // 侵蚀噪声 (平原/陡峭)
-	pvNoise      = NewPerlinNoise(9012) // 峰谷噪声 (山脉形态)
-	warpNoise    = NewPerlinNoise(3456) // 扭曲噪声 (增加自然感)
-	biomeNoise   = NewPerlinNoise(7890) // 生物群系噪声
-)
-
-// 样条曲线控制点
-type SplinePoint struct {
-	X, Y float64
-}
-
-// SampleSpline 在样条曲线上进行线性插值，确保地形连续性
-func SampleSpline(points []SplinePoint, x float64) float64 {
-	if len(points) == 0 { return 0 }
-	if x <= points[0].X { return points[0].Y }
-	if x >= points[len(points)-1].X { return points[len(points)-1].Y }
-
-	for i := 0; i < len(points)-1; i++ {
-		if x <= points[i+1].X {
-			t := (x - points[i].X) / (points[i+1].X - points[i].X)
-			return points[i].Y + t*(points[i+1].Y-points[i].Y)
+	for i := 0; i < terrainLayers; i++ {
+		n := g.layers[i].Noise2D(x*layerFrequency[i], z*layerFrequency[i])
+		amp := layerAmplitude[i]
+		contrib := n * amp
+		if i < 2 {
+			macro += contrib
+		} else {
+			detail += contrib
 		}
 	}
-	return points[len(points)-1].Y
+
+	return terrainNoiseSample{
+		macro:    macro * macroNormFactor,
+		detail:   detail * detailNormFactor,
+	}
 }
 
-// GetHeight 使用连续样条曲线生成高度，消除地形断层
-func GetHeight(x, z int) int {
-	fx, fz := float64(x), float64(z)
+func (g *terrainGenerator) sampleColumn(wx, wz int) (int, biomeID) {
+	ns := g.sampleFiveLayerNoise(wx, wz)
+	continental := ns.macro
 
-	// 1. 基础指标采样
-	cont := contNoise.FBM(fx/600, fz/600, 4)
-	ero := erosionNoise.FBM(fx/300, fz/300, 3)
-	
-	// 领域扭曲处理山脉
-	wx := fx + warpNoise.Noise2D(fx/100, fz/100)*30.0
-	wz := fz + warpNoise.Noise2D(fz/100, fx/100)*30.0
-	pv := 1.0 - math.Abs(pvNoise.FBM(wx/150, wz/150, 4))
-	pv = pv * pv 
+	// Minecraft 风格：海平面附近 + 大尺度起伏 + 高频细节 + 陆地抬升
+	h := float64(seaLevel) + continental*34.0 + ns.detail*8.0
 
-	// 2. 大陆性 -> 基础高度 (消除 if-else 断层)
-	contSpline := []SplinePoint{
-		{-1.0, 30.0},  // 深海
-		{-0.2, 58.0},  // 浅海
-		{-0.1, 62.0},  // 海岸
-		{0.1, 68.0},   // 平原
-		{0.5, 85.0},   // 高地
-		{1.0, 110.0},  // 基础高山
+	if continental > 0.16 {
+		m := continental - 0.16
+		h += m * m * 65.0
 	}
-	baseHeight := SampleSpline(contSpline, cont)
+	if continental < -0.38 {
+		o := -0.38 - continental
+		h -= o * o * 90.0
+	}
 
-	// 3. 侵蚀度与峰谷结合 -> 动态山脉加成
-	// 只有在大陆性较高且侵蚀度较低时，山脉才会挺拔
-	mtnWeight := SampleSpline([]SplinePoint{
-		{0.0, 0.0}, {0.2, 1.0}, // 只有大陆性 > 0.2 才开始有山
-	}, cont)
-	
-	steepness := SampleSpline([]SplinePoint{
-		{-1.0, 1.0}, {0.1, 0.8}, {0.3, 0.0}, // 侵蚀度 > 0.3 后基本变平原
-	}, ero)
+	if h < minTerrainHeight {
+		h = minTerrainHeight
+	}
+	if h > maxTerrainHeight {
+		h = maxTerrainHeight
+	}
 
-	mtnBonus := pv * 80.0 * mtnWeight * steepness
-	
-	h := baseHeight + mtnBonus
+	height := int(h + 0.5)
+	x := float64(wx)
+	z := float64(wz)
+	temp := g.temp.Noise2D(x/900.0, z/900.0)
+	hum := g.humidity.Noise2D(x/900.0, z/900.0)
 
-	// 最终约束
-	if h < 5 { h = 5 }
-	if h > 250 { h = 250 }
-	
-	return int(h)
+	return height, resolveBiome(height, continental, temp, hum)
 }
 
-func GetBiomeName(x, z int) string {
-	fx, fz := float64(x), float64(z)
-	
-	// 使用多层指标确定生物群系
-	temp := biomeNoise.Noise2D(fx/600, fz/600)
-	cont := contNoise.FBM(fx/600, fz/600, 4)
-	ero := erosionNoise.FBM(fx/300, fz/300, 3)
-
-	if cont < -0.2 {
-		return "Deep Ocean"
+func resolveBiome(height int, continental, temp, humidity float64) biomeID {
+	if continental < -0.55 {
+		return biomeDeepOcean
 	}
-	if cont < 0 {
-		return "Ocean"
+	if continental < -0.25 || height <= seaLevel-4 {
+		return biomeOcean
 	}
-	
-	// 高地山脉判断
-	if cont > 0.4 && ero < 0.1 {
-		return "Mountains"
+	if height <= seaLevel+1 {
+		return biomeBeach
 	}
-
-	// 气候判断
-	if temp > 0.35 {
-		return "Desert"
+	if height > 132 && continental > 0.25 {
+		return biomeMountains
+	}
+	if temp > 0.45 && humidity < 0.0 {
+		return biomeDesert
+	}
+	if temp > 0.30 && humidity > 0.20 {
+		return biomeJungle
 	}
 	if temp < -0.25 {
+		return biomeTaiga
+	}
+	if humidity > 0.15 {
+		return biomeForest
+	}
+	return biomePlains
+}
+
+func biomeName(b biomeID) string {
+	switch b {
+	case biomeDeepOcean:
+		return "Deep Ocean"
+	case biomeOcean:
+		return "Ocean"
+	case biomeBeach:
+		return "Beach"
+	case biomePlains:
+		return "Plains"
+	case biomeForest:
+		return "Forest"
+	case biomeTaiga:
 		return "Taiga"
-	}
-	if temp > 0.15 {
+	case biomeDesert:
+		return "Desert"
+	case biomeJungle:
 		return "Jungle"
+	case biomeMountains:
+		return "Mountains"
+	default:
+		return "Plains"
 	}
-	return "Forest"
+}
+
+func surfaceForBiome(b biomeID, height int) (surface uint16, under uint16) {
+	surface, under = BlockGrass, BlockDirt
+
+	switch b {
+	case biomeDeepOcean, biomeOcean:
+		surface, under = BlockSand, BlockSand
+	case biomeBeach:
+		surface, under = BlockSand, BlockSand
+	case biomeDesert:
+		surface, under = BlockSand, BlockSand
+	case biomeMountains:
+		if height > 150 {
+			surface, under = BlockSnow, BlockStone
+		} else if height > 120 {
+			surface, under = BlockGravel, BlockStone
+		} else {
+			surface, under = BlockStone, BlockStone
+		}
+	}
+
+	if height > 170 {
+		surface, under = BlockSnow, BlockStone
+	}
+	return
+}
+
+func oreOrStone(wx, wz, y int) uint16 {
+	h := hash3DWithSeed(wx, y, wz, 0x9f9d2f4b4f6f6f6d)
+
+	switch {
+	case y < 16 && (h&0x1FF) == 0: // 1/512
+		return BlockDiamondOre
+	case y < 32 && (h&0xFF) == 0: // 1/256
+		return BlockGoldOre
+	case y < 64 && (h&0x7F) == 0: // 1/128
+		return BlockIronOre
+	case y < 128 && (h&0x3F) == 0: // 1/64
+		return BlockCoalOre
+	default:
+		return BlockStone
+	}
+}
+
+var (
+	terrainMu sync.RWMutex
+	terrain   = newTerrainGenerator(defaultTerrainSeed)
+)
+
+// SetTerrainSeed 设置地形种子。
+func SetTerrainSeed(seed int64) {
+	terrainMu.Lock()
+	terrain = newTerrainGenerator(seed)
+	terrainMu.Unlock()
+}
+
+// GetTerrainSeed 返回当前地形种子。
+func GetTerrainSeed() int64 {
+	terrainMu.RLock()
+	defer terrainMu.RUnlock()
+	return terrain.seed
+}
+
+// GetHeight 返回世界坐标列的地表高度。
+func GetHeight(x, z int) int {
+	terrainMu.RLock()
+	g := terrain
+	terrainMu.RUnlock()
+	h, _ := g.sampleColumn(x, z)
+	return h
+}
+
+// GetBiomeName 返回世界坐标的生物群系名称。
+func GetBiomeName(x, z int) string {
+	terrainMu.RLock()
+	g := terrain
+	terrainMu.RUnlock()
+	_, biome := g.sampleColumn(x, z)
+	return biomeName(biome)
 }
 
 type treeInfo struct {
@@ -231,182 +427,204 @@ type treeInfo struct {
 	h         int
 }
 
-// scanTreesInRegion 扫描区域内的所有树
-func scanTreesInRegion(minX, minZ, maxX, maxZ int) []treeInfo {
-	var trees []treeInfo
-	// 性能优化: 减少内存分配
-	for wx := minX; wx <= maxX; wx++ {
-		for wz := minZ; wz <= maxZ; wz++ {
-			// 使用更轻量级的哈希
-			hVal := (int64(wx)*31337 + int64(wz)*7919)
-			if hVal%10 != 0 { continue } // 快速过滤
+func treeChanceByBiome(b biomeID) float64 {
+	switch b {
+	case biomeForest:
+		return 0.18
+	case biomeTaiga:
+		return 0.15
+	case biomeJungle:
+		return 0.24
+	case biomeMountains:
+		return 0.06
+	default:
+		return 0.03
+	}
+}
 
-			rng := rand.New(rand.NewSource(hVal))
-			biomeName := GetBiomeName(wx, wz)
-			
-			// 树木密度控制
-			chance := 0.002
-			if biomeName == "Forest" {
-				chance = 0.015 + 0.01 * contNoise.Noise2D(float64(wx)/50, float64(wz)/50) // 加入密度噪声
-			} else if biomeName == "Taiga" {
-				chance = 0.01 + 0.01 * contNoise.Noise2D(float64(wx)/80, float64(wz)/80)
-			} else if biomeName == "Jungle" {
-				chance = 0.02 + 0.02 * contNoise.Noise2D(float64(wx)/30, float64(wz)/30)
-			} else if biomeName == "Mountains" {
-				chance = 0.005
+// scanTreesInRegion 使用网格候选点扫描，避免逐格随机，提升地形装饰性能。
+func scanTreesInRegion(g *terrainGenerator, minX, minZ, maxX, maxZ int) []treeInfo {
+	cellMinX := floorDiv(minX, treeCellSize)
+	cellMaxX := floorDiv(maxX, treeCellSize)
+	cellMinZ := floorDiv(minZ, treeCellSize)
+	cellMaxZ := floorDiv(maxZ, treeCellSize)
+
+	trees := make([]treeInfo, 0, 64)
+	seedBase := uint64(g.seed) ^ 0x7f4a7c159e3779b9
+
+	for cx := cellMinX; cx <= cellMaxX; cx++ {
+		for cz := cellMinZ; cz <= cellMaxZ; cz++ {
+			h := hash2DWithSeed(cx, cz, seedBase)
+			wx := cx*treeCellSize + int((h>>8)&uint64(treeCellSize-1))
+			wz := cz*treeCellSize + int((h>>12)&uint64(treeCellSize-1))
+
+			if wx < minX || wx > maxX || wz < minZ || wz > maxZ {
+				continue
 			}
 
-			height := GetHeight(wx, wz)
-			if height >= 63 && rng.Float64() < chance {
-				log, leaf, style, h := getTreeConfig(biomeName, rng)
-				trees = append(trees, treeInfo{wx, wz, height, log, leaf, style, h})
+			height, biome := g.sampleColumn(wx, wz)
+			if height <= seaLevel || height >= 255 {
+				continue
 			}
+
+			chance := treeChanceByBiome(biome)
+			if unitFloat01(h) >= chance {
+				continue
+			}
+
+			log, leaf, style, th := getTreeConfig(biome, h)
+			trees = append(trees, treeInfo{wx: wx, wz: wz, y: height, log: log, leaf: leaf, style: style, h: th})
 		}
 	}
 	return trees
 }
 
-func getTreeConfig(biome string, rng *rand.Rand) (uint16, uint16, string, int) {
-	switch biome {
-	case "Taiga":
-		return BlockLogSpruce, BlockLeavesSpruce, "spruce", 6 + rng.Intn(4)
-	case "Jungle":
-		return BlockLogJungle, BlockLeavesJungle, "jungle", 10 + rng.Intn(8)
-	case "Forest", "Mountains":
-		r := rng.Float32()
-		if r < 0.2 {
-			return BlockLogBirch, BlockLeavesBirch, "birch", 5 + rng.Intn(3)
+func getTreeConfig(b biomeID, h uint64) (uint16, uint16, string, int) {
+	rnd := h >> 16
+	switch b {
+	case biomeTaiga:
+		return BlockLogSpruce, BlockLeavesSpruce, "spruce", 6 + int((rnd>>3)&3)
+	case biomeJungle:
+		return BlockLogJungle, BlockLeavesJungle, "jungle", 10 + int((rnd>>2)&7)
+	case biomeForest, biomeMountains:
+		if (rnd & 0xFF) < 51 { // 约20%
+			return BlockLogBirch, BlockLeavesBirch, "birch", 5 + int((rnd>>8)&3)
 		}
-		return BlockLogOak, BlockLeavesOak, "oak", 4 + rng.Intn(3)
+		return BlockLogOak, BlockLeavesOak, "oak", 4 + int((rnd>>7)&3)
 	default:
-		return BlockLogOak, BlockLeavesOak, "oak", 4 + rng.Intn(2)
+		return BlockLogOak, BlockLeavesOak, "oak", 4 + int((rnd>>6)&2)
 	}
 }
 
 func (chunk *Chunk) GenerateChunk() {
 	worldBaseX, worldBaseZ := int(chunk.X)*16, int(chunk.Z)*16
 
-	// 1. 生成基础地形
+	terrainMu.RLock()
+	g := terrain
+	terrainMu.RUnlock()
+
+	var heights [16][16]int
+	var biomes [16][16]biomeID
+
+	// 1. 基础地形（热路径：零分配 + 最少无效循环）
 	for lx := 0; lx < 16; lx++ {
 		for lz := 0; lz < 16; lz++ {
 			wx, wz := worldBaseX+lx, worldBaseZ+lz
-			height := GetHeight(wx, wz)
-			biome := GetBiomeName(wx, wz)
+			height, biome := g.sampleColumn(wx, wz)
+			heights[lx][lz] = height
+			biomes[lx][lz] = biome
 
-			surface, under := BlockGrass, BlockDirt
-			switch biome {
-			case "Desert":
-				surface, under = BlockSand, BlockSand
-			case "Ocean", "Deep Ocean":
-				surface, under = BlockSand, BlockDirt
-			case "Mountains":
-				if height > 140 {
-					surface = BlockSnow
-				} else if height > 110 {
-					surface = BlockGravel
-				} else {
-					surface = BlockStone
-				}
-				under = BlockStone
-			}
-			
-			// 高海拔地区即便是森林也可能覆盖积雪
-			if height > 160 {
-				surface = BlockSnow
-				under = BlockStone
-			}
+			surface, under := surfaceForBiome(biome, height)
 
-			// 使用区间填充优化，避免逐块 switch
-			// 0: 基岩
 			chunk.Blocks[lx][0][lz] = BlockBedrock
 
-			// 1 -> height-4: 石头
-			for ly := 1; ly <= height-4; ly++ {
-				state := BlockStone
-				// 矿石随机分布 (基于坐标的哈希)
-				oreSeed := int64(wx)*37 + int64(wz)*13 + int64(ly)*7
-				if (oreSeed % 100) == 0 {
-					if ly < 16 && (oreSeed%1000) == 7 {
-						state = BlockDiamondOre
-					} else if ly < 32 && (oreSeed%200) == 3 {
-						state = BlockGoldOre
-					} else if (oreSeed % 100) == 0 {
-						if (oreSeed % 300) < 100 {
-							state = BlockIronOre
-						} else {
-							state = BlockCoalOre
-						}
-					}
-				}
-				chunk.Blocks[lx][ly][lz] = state
+			stoneTop := height - 4
+			if stoneTop < 1 {
+				stoneTop = 1
+			}
+			if stoneTop > 255 {
+				stoneTop = 255
 			}
 
-			// height-3 -> height-1: 泥土/沙子
-			for ly := maxI(1, height-3); ly < height; ly++ {
+			for ly := 1; ly <= stoneTop; ly++ {
+				chunk.Blocks[lx][ly][lz] = oreOrStone(wx, wz, ly)
+			}
+
+			fillFrom := stoneTop + 1
+			if fillFrom < 1 {
+				fillFrom = 1
+			}
+			for ly := fillFrom; ly < height && ly < 256; ly++ {
 				chunk.Blocks[lx][ly][lz] = under
 			}
 
-			// height: 草方块/沙子
-			if height > 0 {
+			if height > 0 && height < 256 {
 				chunk.Blocks[lx][height][lz] = surface
 			}
 
-			// height+1 -> 255: 空气或水
-			for ly := height + 1; ly < 256; ly++ {
-				chunk.Blocks[lx][ly][lz] = selectWaterOrAir(ly)
+			// 新区块默认就是空气，因此只填海平面以下水体即可。
+			if height < seaLevel {
+				for ly := height + 1; ly <= seaLevel && ly < 256; ly++ {
+					chunk.Blocks[lx][ly][lz] = BlockWater
+				}
 			}
 		}
 	}
 
-	// 2. 无接缝植被装饰 (核心修复：扫描邻近区域树木)
-	// 扫描范围只需覆盖能触及该区块的最大树冠半径即可 (通常为 4-5 块)
-	trees := scanTreesInRegion(worldBaseX-5, worldBaseZ-5, worldBaseX+20, worldBaseZ+20)
+	// 2. 无接缝植被装饰（扫描边界延伸区域）
+	trees := scanTreesInRegion(g, worldBaseX-5, worldBaseZ-5, worldBaseX+20, worldBaseZ+20)
 	for _, t := range trees {
 		renderTreeInChunk(chunk, t)
 	}
 
 	// 3. 小装饰 (草花, 甘蔗)
+	seedBase := uint64(g.seed) ^ 0xa24baed4963ee407
 	for lx := 0; lx < 16; lx++ {
 		for lz := 0; lz < 16; lz++ {
+			h := heights[lx][lz]
+			if h < seaLevel || h >= 255 {
+				continue
+			}
+
+			if chunk.Blocks[lx][h+1][lz] != BlockAir {
+				continue
+			}
+
 			wx, wz := worldBaseX+lx, worldBaseZ+lz
-			h := GetHeight(wx, wz)
-			if h >= 63 && h < 255 {
-				rng := rand.New(rand.NewSource(int64(wx)*13 + int64(wz)*7))
-				r := rng.Float64()
-				
-				// 只有在空气且下方是非空气时放置装饰
-				if chunk.Blocks[lx][h+1][lz] == BlockAir {
-					if r < 0.08 {
-						chunk.Blocks[lx][h+1][lz] = TallGrass
-					} else if r < 0.09 {
-						chunk.Blocks[lx][h+1][lz] = BlockDandelion
-					} else if r < 0.10 {
-						chunk.Blocks[lx][h+1][lz] = BlockRose
-					}
+			decoHash := hash2DWithSeed(wx, wz, seedBase)
+			roll := unitFloat01(decoHash)
+			biome := biomes[lx][lz]
+
+			if biome != biomeOcean && biome != biomeDeepOcean && biome != biomeBeach {
+				if roll < 0.07 {
+					chunk.Blocks[lx][h+1][lz] = TallGrass
+				} else if roll < 0.08 {
+					chunk.Blocks[lx][h+1][lz] = BlockDandelion
+				} else if roll < 0.09 {
+					chunk.Blocks[lx][h+1][lz] = BlockRose
 				}
-				
-				// 在水边生成甘蔗
-				if (chunk.Blocks[lx][h][lz] == BlockGrass || chunk.Blocks[lx][h][lz] == BlockSand) && h <= 64 {
-					isNearWater := false
-					// 简单检测四周是否有水
-					if (lx > 0 && chunk.Blocks[lx-1][h][lz] == BlockWater) || 
-					   (lx < 15 && chunk.Blocks[lx+1][h][lz] == BlockWater) ||
-					   (lz > 0 && chunk.Blocks[lx][h][lz-1] == BlockWater) ||
-					   (lz < 15 && chunk.Blocks[lx][h][lz+1] == BlockWater) {
-						isNearWater = true
+			}
+
+			surface := chunk.Blocks[lx][h][lz]
+			if (surface == BlockGrass || surface == BlockSand) && h <= seaLevel+1 {
+				if isNearWaterInChunk(chunk, lx, h, lz) {
+					caneChance := 0.12
+					if biome == biomeJungle {
+						caneChance = 0.20
 					}
-					if isNearWater && r < 0.15 {
-						caneH := 2 + rng.Intn(2)
-						for ch := 1; ch <= caneH; ch++ {
-							if h+ch < 256 {
-								chunk.Blocks[lx][h+ch][lz] = BlockSugarCane
+					if unitFloat01(mix64(decoHash^0x6a09e667f3bcc909)) < caneChance {
+						caneHeight := 2 + int((decoHash>>48)&1)
+						for ch := 1; ch <= caneHeight; ch++ {
+							y := h + ch
+							if y >= 256 {
+								break
 							}
+							if chunk.Blocks[lx][y][lz] != BlockAir {
+								break
+							}
+							chunk.Blocks[lx][y][lz] = BlockSugarCane
 						}
 					}
 				}
 			}
 		}
 	}
+}
+
+func isNearWaterInChunk(chunk *Chunk, lx, y, lz int) bool {
+	if lx > 0 && chunk.Blocks[lx-1][y][lz] == BlockWater {
+		return true
+	}
+	if lx < 15 && chunk.Blocks[lx+1][y][lz] == BlockWater {
+		return true
+	}
+	if lz > 0 && chunk.Blocks[lx][y][lz-1] == BlockWater {
+		return true
+	}
+	if lz < 15 && chunk.Blocks[lx][y][lz+1] == BlockWater {
+		return true
+	}
+	return false
 }
 
 func renderTreeInChunk(chunk *Chunk, t treeInfo) {
@@ -467,7 +685,7 @@ func renderSpruceCanopy(chunk *Chunk, t treeInfo) {
 		} else if radius == 1 {
 			radius = 2
 		} else {
-			radius -= 1
+			radius--
 		}
 	}
 }
@@ -495,25 +713,11 @@ func setBlock(chunk *Chunk, lx, ly, lz int, state uint16) {
 	}
 }
 
-func selectWaterOrAir(y int) uint16 {
-	if y <= 63 {
-		return BlockWater
-	}
-	return BlockAir
-}
-
 func absI(x int) int {
 	if x < 0 {
 		return -x
 	}
 	return x
-}
-
-func maxI(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 // IsBlockSolid 指定位置是否为固体方块
