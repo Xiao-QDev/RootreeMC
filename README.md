@@ -5,7 +5,7 @@ A Minecraft server core built for ultimate performance and cross-language extens
 ![Go](https://img.shields.io/badge/Go-1.26-blue?style=flat-square&logo=go&logoColor=white) 
 ![GoLand](https://img.shields.io/badge/GoLand-000000?logo=goland&logoColor=white&style=flat-square)
 ![Minecraft](https://img.shields.io/badge/Minecraft-62B47A?style=flat-square&logo=minecraft&logoColor=white)
-[![Wasm](https://img.shields.io/badge/WebAssembly-654FF0?style=for-the-badge&logo=webassembly&logoColor=white)](https://github.com/bytecodealliance/wasmtime-go))
+![Wasm]((https://github.com/bytecodealliance/wasmtime-go)&logoColor=white)
 
 **Group and Project Discussion**\
 [交流群与讨论]
