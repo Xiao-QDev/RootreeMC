@@ -1,0 +1,14 @@
+# Minecraft Server Config
+level-name: world
+level-type: minecraft:normal
+max-players: 20
+motd: A Minecraft Server
+network-compression-threshold: 256
+online-mode: false
+query.port: 25565
+rate-limit: 0
+rcon.password: ""
+rcon.port: 25575
+server-ip: 0.0.0.0
+server-port: 25565
+white-list: true

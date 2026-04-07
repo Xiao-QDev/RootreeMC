@@ -1,0 +1,304 @@
+{
+  "Username": "Xiao_QDev",
+  "UUID": "06735516bfd23a82aa1b23d455723f56",
+  "Position": {
+    "X": -10.122578958260338,
+    "Y": 67,
+    "Z": -9.933950460576007,
+    "Yaw": 1187.8722,
+    "Pitch": 5.840823
+  },
+  "Inventory": {
+    "Slots": [
+      {
+        "ItemID": 1,
+        "Count": 64,
+        "Damage": 0,
+        "HasNBT": false,
+        "NBTData": null
+      },
+      {
+        "ItemID": 3,
+        "Count": 64,
+        "Damage": 0,
+        "HasNBT": false,
+        "NBTData": null
+      },
+      {
+        "ItemID": 5,
+        "Count": 64,
+        "Damage": 0,
+        "HasNBT": false,
+        "NBTData": null
+      },
+      {
+        "ItemID": 20,
+        "Count": 64,
+        "Damage": 0,
+        "HasNBT": false,
+        "NBTData": null
+      },
+      {
+        "ItemID": 50,
+        "Count": 64,
+        "Damage": 0,
+        "HasNBT": false,
+        "NBTData": null
+      },
+      {
+        "ItemID": 54,
+        "Count": 64,
+        "Damage": 0,
+        "HasNBT": false,
+        "NBTData": null
+      },
+      {
+        "ItemID": 58,
+        "Count": 64,
+        "Damage": 0,
+        "HasNBT": false,
+        "NBTData": null
+      },
+      {
+        "ItemID": 61,
+        "Count": 64,
+        "Damage": 0,
+        "HasNBT": false,
+        "NBTData": null
+      },
+      {
+        "ItemID": 46,
+        "Count": 64,
+        "Damage": 0,
+        "HasNBT": false,
+        "NBTData": null
+      },
+      {
+        "ItemID": 257,
+        "Count": 1,
+        "Damage": 0,
+        "HasNBT": false,
+        "NBTData": null
+      },
+      {
+        "ItemID": 256,
+        "Count": 1,
+        "Damage": 0,
+        "HasNBT": false,
+        "NBTData": null
+      },
+      {
+        "ItemID": 258,
+        "Count": 1,
+        "Damage": 0,
+        "HasNBT": false,
+        "NBTData": null
+      },
+      {
+        "ItemID": 259,
+        "Count": 1,
+        "Damage": 0,
+        "HasNBT": false,
+        "NBTData": null
+      },
+      {
+        "ItemID": 0,
+        "Count": 0,
+        "Damage": 0,
+        "HasNBT": false,
+        "NBTData": null
+      },
+      {
+        "ItemID": 0,
+        "Count": 0,
+        "Damage": 0,
+        "HasNBT": false,
+        "NBTData": null
+      },
+      {
+        "ItemID": 0,
+        "Count": 0,
+        "Damage": 0,
+        "HasNBT": false,
+        "NBTData": null
+      },
+      {
+        "ItemID": 0,
+        "Count": 0,
+        "Damage": 0,
+        "HasNBT": false,
+        "NBTData": null
+      },
+      {
+        "ItemID": 0,
+        "Count": 0,
+        "Damage": 0,
+        "HasNBT": false,
+        "NBTData": null
+      },
+      {
+        "ItemID": 0,
+        "Count": 0,
+        "Damage": 0,
+        "HasNBT": false,
+        "NBTData": null
+      },
+      {
+        "ItemID": 0,
+        "Count": 0,
+        "Damage": 0,
+        "HasNBT": false,
+        "NBTData": null
+      },
+      {
+        "ItemID": 0,
+        "Count": 0,
+        "Damage": 0,
+        "HasNBT": false,
+        "NBTData": null
+      },
+      {
+        "ItemID": 0,
+        "Count": 0,
+        "Damage": 0,
+        "HasNBT": false,
+        "NBTData": null
+      },
+      {
+        "ItemID": 0,
+        "Count": 0,
+        "Damage": 0,
+        "HasNBT": false,
+        "NBTData": null
+      },
+      {
+        "ItemID": 0,
+        "Count": 0,
+        "Damage": 0,
+        "HasNBT": false,
+        "NBTData": null
+      },
+      {
+        "ItemID": 0,
+        "Count": 0,
+        "Damage": 0,
+        "HasNBT": false,
+        "NBTData": null
+      },
+      {
+        "ItemID": 0,
+        "Count": 0,
+        "Damage": 0,
+        "HasNBT": false,
+        "NBTData": null
+      },
+      {
+        "ItemID": 0,
+        "Count": 0,
+        "Damage": 0,
+        "HasNBT": false,
+        "NBTData": null
+      },
+      {
+        "ItemID": 0,
+        "Count": 0,
+        "Damage": 0,
+        "HasNBT": false,
+        "NBTData": null
+      },
+      {
+        "ItemID": 0,
+        "Count": 0,
+        "Damage": 0,
+        "HasNBT": false,
+        "NBTData": null
+      },
+      {
+        "ItemID": 0,
+        "Count": 0,
+        "Damage": 0,
+        "HasNBT": false,
+        "NBTData": null
+      },
+      {
+        "ItemID": 0,
+        "Count": 0,
+        "Damage": 0,
+        "HasNBT": false,
+        "NBTData": null
+      },
+      {
+        "ItemID": 0,
+        "Count": 0,
+        "Damage": 0,
+        "HasNBT": false,
+        "NBTData": null
+      },
+      {
+        "ItemID": 0,
+        "Count": 0,
+        "Damage": 0,
+        "HasNBT": false,
+        "NBTData": null
+      },
+      {
+        "ItemID": 0,
+        "Count": 0,
+        "Damage": 0,
+        "HasNBT": false,
+        "NBTData": null
+      },
+      {
+        "ItemID": 0,
+        "Count": 0,
+        "Damage": 0,
+        "HasNBT": false,
+        "NBTData": null
+      },
+      {
+        "ItemID": 0,
+        "Count": 0,
+        "Damage": 0,
+        "HasNBT": false,
+        "NBTData": null
+      },
+      {
+        "ItemID": 0,
+        "Count": 0,
+        "Damage": 0,
+        "HasNBT": false,
+        "NBTData": null
+      },
+      {
+        "ItemID": 0,
+        "Count": 0,
+        "Damage": 0,
+        "HasNBT": false,
+        "NBTData": null
+      },
+      {
+        "ItemID": 0,
+        "Count": 0,
+        "Damage": 0,
+        "HasNBT": false,
+        "NBTData": null
+      },
+      {
+        "ItemID": 0,
+        "Count": 0,
+        "Damage": 0,
+        "HasNBT": false,
+        "NBTData": null
+      },
+      {
+        "ItemID": 0,
+        "Count": 0,
+        "Damage": 0,
+        "HasNBT": false,
+        "NBTData": null
+      }
+    ]
+  },
+  "Gamemode": 1,
+  "LastSeen": 1775528008
+}
