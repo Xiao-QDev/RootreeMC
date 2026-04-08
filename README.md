@@ -29,3 +29,4 @@ Plugin Development [Wasm]\
 ![GoLand](https://img.shields.io/badge/GoLand-000000?logo=goland&logoColor=white&style=flat-square)
 ![Wasm](https://img.shields.io/badge/wasmtime-654FF0?style=flat-square&logo=webassembly&logoColor=white)
 ![Minecraft](https://img.shields.io/badge/Minecraft-1.12.2-62B47A?style=flat-square&logo=minecraft&logoColor=white)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue)](https://opensource.org/licenses/AGPL-3.0)
