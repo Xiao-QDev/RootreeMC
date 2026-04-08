@@ -7,7 +7,7 @@ A Minecraft server core built for ultimate performance and cross-language extens
 
 # Getting Started
 [获取并启动RootreeMC]
----------------
+------
 [Download](https://RootreeMC.cn/download) the required program from the official website, and simply double-click the executable file to launch it.\
 * This is for Windows.\
 [请访问对应网站下载所需程序 并双击运行程序即可]
@@ -17,7 +17,7 @@ A Minecraft server core built for ultimate performance and cross-language extens
 3. Run the program:  ./ RootreeMC
    (Or double-click the executable in your file manager for GUI applications.)
 ------
-Plugin Development [Wasm]
+# Plugin Development [Wasm]\
 [插件开发指南]
 ------
 * Thanks to [HKMC Cloud](https://cloud.hkmc.online/) for sponsoring this development!
