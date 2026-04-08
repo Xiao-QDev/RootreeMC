@@ -1,5 +1,4 @@
-# RootreeMC\ 
-* Developed by RootreeMC Team
+# RootreeMC
 A Minecraft server core built for ultimate performance and cross-language extensibility\
 [一个追求极致运行效率 与跨语言扩展性设计的 Minecraft 服务端程序]
 **Group and Project Discussion**\
@@ -31,3 +30,4 @@ Plugin Development [Wasm]\
 ![Wasm](https://img.shields.io/badge/wasmtime-654FF0?style=flat-square&logo=webassembly&logoColor=white)
 ![Minecraft](https://img.shields.io/badge/Minecraft-1.12.2-62B47A?style=flat-square&logo=minecraft&logoColor=white)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue)](https://opensource.org/licenses/AGPL-3.0)
+Developed by RootreeMC Team
