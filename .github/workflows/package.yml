@@ -1,4 +1,4 @@
-name: Build and Package
+name: Build and Release
 
 on:
   push:
@@ -15,15 +15,47 @@ env:
   APP_NAME: RootreeMC
 
 jobs:
-  discover-main:
-    name: Discover Main Package
+  resolve-version:
+    name: Resolve Plugin Version
     runs-on: ubuntu-latest
     outputs:
-      has_main: ${{ steps.find.outputs.has_main }}
-      main_pkg: ${{ steps.find.outputs.main_pkg }}
+      version: ${{ steps.version.outputs.version }}
+      release_tag: ${{ steps.version.outputs.release_tag }}
+      release_name: ${{ steps.version.outputs.release_name }}
+      main_pkg: ${{ steps.main.outputs.main_pkg }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Detect plugin version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          VERSION_FILE=""
+          for file in ".codex-plugin/plugin.json" "plugin.json" "Plugin Loader/plugin.json"; do
+            if [[ -f "$file" ]]; then
+              VERSION_FILE="$file"
+              break
+            fi
+          done
+
+          if [[ -z "$VERSION_FILE" ]]; then
+            echo "::error::No plugin version file found. Expected one of: .codex-plugin/plugin.json, plugin.json, Plugin Loader/plugin.json"
+            exit 1
+          fi
+
+          VERSION="$(jq -r '.version // empty' "$VERSION_FILE")"
+          if [[ -z "$VERSION" || "$VERSION" == "null" ]]; then
+            echo "::error::Missing .version in ${VERSION_FILE}"
+            exit 1
+          fi
+
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "release_tag=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "release_name=RootreeMC ${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Plugin version: ${VERSION} (from ${VERSION_FILE})"
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -31,47 +63,22 @@ jobs:
           go-version-file: go.mod
 
       - name: Detect main package
-        id: find
+        id: main
         shell: bash
         run: |
           set -euo pipefail
           MAIN_PKG="$(go list -f '{{if eq .Name "main"}}{{.ImportPath}}{{end}}' ./... | sed '/^$/d' | head -n 1 || true)"
-          if [[ -n "$MAIN_PKG" ]]; then
-            echo "has_main=true" >> "$GITHUB_OUTPUT"
-            echo "main_pkg=$MAIN_PKG" >> "$GITHUB_OUTPUT"
-            echo "Found main package: $MAIN_PKG"
-          else
-            echo "has_main=false" >> "$GITHUB_OUTPUT"
-            echo "main_pkg=" >> "$GITHUB_OUTPUT"
-            echo "No main package found, binary build steps will be skipped."
+          if [[ -z "$MAIN_PKG" ]]; then
+            echo "::error::No main package found. Cannot build Linux/Windows executables."
+            exit 1
           fi
-
-  source-package:
-    name: Package Source
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Create source archive
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p dist
-          ARCHIVE_NAME="${APP_NAME}-source-${GITHUB_SHA::7}.zip"
-          git archive --format=zip --output="dist/${ARCHIVE_NAME}" HEAD
-
-      - name: Upload source artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: package-source
-          path: dist/*.zip
-          if-no-files-found: error
+          echo "main_pkg=${MAIN_PKG}" >> "$GITHUB_OUTPUT"
+          echo "Main package: ${MAIN_PKG}"
 
   build-binaries:
-    name: Build Binaries (${{ matrix.goos }}-${{ matrix.goarch }})
+    name: Build (${{ matrix.goos }}-${{ matrix.goarch }})
     runs-on: ubuntu-latest
-    needs: discover-main
+    needs: resolve-version
     strategy:
       fail-fast: false
       matrix:
@@ -84,21 +91,18 @@ jobs:
             ext: ".exe"
     steps:
       - name: Checkout
-        if: needs.discover-main.outputs.has_main == 'true'
         uses: actions/checkout@v4
 
       - name: Setup Go
-        if: needs.discover-main.outputs.has_main == 'true'
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
 
       - name: Build binary
-        if: needs.discover-main.outputs.has_main == 'true'
         shell: bash
         env:
-          MAIN_PKG: ${{ needs.discover-main.outputs.main_pkg }}
+          MAIN_PKG: ${{ needs.resolve-version.outputs.main_pkg }}
         run: |
           set -euo pipefail
           mkdir -p dist
@@ -107,61 +111,35 @@ jobs:
             go build -trimpath -ldflags "-s -w" -o "dist/${BIN_NAME}" "${MAIN_PKG}"
 
       - name: Upload binary artifact
-        if: needs.discover-main.outputs.has_main == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: package-${{ matrix.goos }}-${{ matrix.goarch }}
+          name: binary-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/${{ env.APP_NAME }}-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}
           if-no-files-found: error
 
-      - name: No main package found
-        if: needs.discover-main.outputs.has_main != 'true'
-        shell: bash
-        run: echo "Skipped ${APP_NAME} binary build because no main package was found."
-
   release:
-    name: Publish Rolling Release
+    name: Publish GitHub Release
     runs-on: ubuntu-latest
     needs:
-      - source-package
+      - resolve-version
       - build-binaries
     steps:
-      - name: Checkout (for tag update)
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Download packaged artifacts
+      - name: Download binaries
         uses: actions/download-artifact@v4
         with:
           path: release-assets
-          pattern: package-*
+          pattern: binary-*
           merge-multiple: true
 
-      - name: Move rolling release tag
-        shell: bash
-        env:
-          TAG_NAME: ci-latest
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -fa "$TAG_NAME" -m "Auto build for ${GITHUB_SHA}"
-          git push origin "refs/tags/${TAG_NAME}" --force
-
-      - name: Create or update GitHub Release
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ci-latest
-        run: |
-          set -euo pipefail
-          RELEASE_TITLE="CI Latest Build"
-          RELEASE_NOTES="Auto package from branch ${GITHUB_REF_NAME} at commit ${GITHUB_SHA}."
-
-          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
-            gh release edit "$TAG_NAME" --title "$RELEASE_TITLE" --notes "$RELEASE_NOTES" --prerelease
-            gh release upload "$TAG_NAME" release-assets/* --clobber
-          else
-            gh release create "$TAG_NAME" release-assets/* --title "$RELEASE_TITLE" --notes "$RELEASE_NOTES" --prerelease
-          fi
+      - name: Create or update release by plugin version
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.resolve-version.outputs.release_tag }}
+          name: ${{ needs.resolve-version.outputs.release_name }}
+          prerelease: false
+          make_latest: true
+          generate_release_notes: true
+          files: |
+            release-assets/${{ env.APP_NAME }}-linux-amd64
+            release-assets/${{ env.APP_NAME }}-windows-amd64.exe
+          overwrite_files: true
