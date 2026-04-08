@@ -1,5 +1,4 @@
 # RootreeMC
-------
 A Minecraft server core built for ultimate performance and cross-language extensibility\
 [一个追求极致运行效率 与跨语言扩展性设计的 Minecraft 服务端程序]\
 **Group and Project Discussion**\
