@@ -1,4 +1,4 @@
-GNU AFFERO GENERAL PUBLIC LICENSE
+*GNU AFFERO GENERAL PUBLIC LICENSE
                        Version 3, 19 November 2007
 
  Copyright (C) 2007 Free Software Foundation, Inc. <https://fsf.org/>
@@ -570,4 +570,40 @@ address new problems or concerns.
 Program specifies that a certain numbered version of the GNU Affero General
 Public License "or any later version" applies to it, you have the
 option of following the terms and conditions either of that numbered
-version or of any later version publis
+version or of any later version published by the Free Software
+ Foundation.  If the Program does not specify a version number of the
+ GNU Affero General Public License, you may choose any version ever
+ published by the Free Software Foundation.
+   If the Program specifies that a proxy can decide which future
+ version of the GNU Affero General Public License shall be used, that
+ proxy's public statement of acceptance of a version shall constitute
+ authorization of that version for you and the Program.
+   If the Program does not specify a proxy, the copyright holder of
+ the Program may choose to relicense it under the regular GNU General
+ Public License or the Affero GPL version 3, and you may continue under the terms of this License.
+ 15. Disclaimer of Warranty.
+   THERE IS NO WARRANTY FOR THE PROGRAM, TO THE EXTENT PERMITTED BY
+ APPLICABLE LAW.  EXCEPT WHEN OTHERWISE STATED IN WRITING THE COPYRIGHT
+ HOLDERS AND/OR OTHER PARTIES PROVIDE THE PROGRAM "AS IS" WITHOUT WARRANTY
+ OF ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING, BUT NOT LIMITED TO,
+ THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ PURPOSE.  THE ENTIRE RISK AS TO THE QUALITY AND PERFORMANCE OF THE PROGRAM
+ IS WITH YOU.  SHOULD THE PROGRAM PROVE DEFECTIVE, YOU ASSUME THE COST OF
+ ALL NECESSARY SERVICING, REPAIR OR CORRECTION.
+   16. Limitation of Liability.
+   IN NO EVENT UNLESS REQUIRED BY APPLICABLE LAW OR AGREED TO IN WRITING
+ WILL ANY COPYRIGHT HOLDER, OR ANY OTHER PARTY WHO MODIFIES AND/OR CONVEYS
+ THE PROGRAM AS PERMITTED ABOVE, BE LIABLE TO YOU FOR DAMAGES, INCLUDING ANY
+ GENERAL, SPECIAL, INCIDENTAL OR CONSEQUENTIAL DAMAGES OF ANY KIND,
+ ARISING OUT OF THE USE OR INABILITY TO USE THE PROGRAM (INCLUDING BUT
+ NOT LIMITED TO LOSS OF USE, DATA OR PROFITS, OR BUSINESS INTERRUPTION),
+ HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ OUT OF THE USE OF THIS LICENSE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ SUCH DAMAGES.
+   17. Interpretation of Sections 15 and 16.
+If the disclaimer of warranty and limitation of liability provided
+ above cannot be given local legal effect according to their terms,
+ reviewing courts shall apply local law that most closely approximates
+ an absolute waiver of all liability for the program, unless a warranty
+ or assumption of liability accompanies the Program in connection with a sale of the Program.
