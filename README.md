@@ -6,7 +6,7 @@ A Minecraft server core built for ultimate performance and cross-language extens
 - [QQ Group](https://qm.qq.com/q/UtIAQdsfm0) or [Discord](https://discord.gg/ZjyZyjz)
 
 Getting Started\
-[获取并启动RootreeMC]
+[快速上手RootreeMC]
 ------
 [Download](https://RootreeMC.cn/download) the required program from the official website, and simply double-click the executable file to launch it.\
 * This is for Windows.\
