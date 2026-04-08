@@ -41,21 +41,22 @@ jobs:
             fi
           done
 
-          if [[ -z "$VERSION_FILE" ]]; then
-            echo "::error::No plugin version file found. Expected one of: .codex-plugin/plugin.json, plugin.json, Plugin Loader/plugin.json"
-            exit 1
+          VERSION=""
+          if [[ -n "$VERSION_FILE" ]]; then
+            VERSION="$(jq -r '.version // empty' "$VERSION_FILE")"
           fi
 
-          VERSION="$(jq -r '.version // empty' "$VERSION_FILE")"
+          # Fallback for custom server repos without plugin metadata.
           if [[ -z "$VERSION" || "$VERSION" == "null" ]]; then
-            echo "::error::Missing .version in ${VERSION_FILE}"
-            exit 1
+            VERSION="build-${GITHUB_RUN_NUMBER}-${GITHUB_SHA::7}"
+            echo "No plugin version file found, fallback version: ${VERSION}"
+          else
+            echo "Plugin version: ${VERSION} (from ${VERSION_FILE})"
           fi
 
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "release_tag=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "release_name=RootreeMC ${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "Plugin version: ${VERSION} (from ${VERSION_FILE})"
 
       - name: Setup Go
         uses: actions/setup-go@v5
