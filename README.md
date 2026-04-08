@@ -18,6 +18,7 @@ A Minecraft server core built for ultimate performance and cross-language extens
    (Or double-click the executable in your file manager for GUI applications.)
 ------
 Plugin Development [Wasm]
+[插件开发指南]
 ------
 * Thanks to [HKMC Cloud](https://cloud.hkmc.online/) for sponsoring this development!
 * For servers, contact official sales: “Xiao_Q” — professional and reliable.
