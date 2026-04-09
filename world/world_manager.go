@@ -12,8 +12,10 @@ import (
 
 // WorldManager 管理所有加载的区块
 type WorldManager struct {
-	chunks map[[2]int32]*Chunk // key: [chunkX, chunkZ]
-	mu     sync.RWMutex
+	chunks     map[[2]int32]*Chunk // key: [chunkX, chunkZ]
+	dirtyChunks map[[2]int32]bool
+	saveDir    string
+	mu         sync.RWMutex
 }
 
 // GlobalWorld 全局世界管理器实例
@@ -21,13 +23,29 @@ var GlobalWorld *WorldManager
 
 func init() {
 	GlobalWorld = NewWorldManager()
+	if err := GlobalWorld.LoadBlockTickState(); err != nil {
+		slog.Warn("[World] 读取方块Tick存档失败", "err", err)
+	}
 }
 
 // NewWorldManager 创建新的世界管理器
 func NewWorldManager() *WorldManager {
-	return &WorldManager{
-		chunks: make(map[[2]int32]*Chunk),
+	dir := defaultChunkSaveDir()
+	if err := ensureDir(dir); err != nil {
+		slog.Warn("[World] 创建区块存档目录失败", "dir", dir, "err", err)
 	}
+
+	wm := &WorldManager{
+		chunks:      make(map[[2]int32]*Chunk),
+		dirtyChunks: make(map[[2]int32]bool),
+		saveDir:     dir,
+	}
+
+	if err := wm.ConvertAnvilToLinearV2IfNeeded(); err != nil {
+		slog.Warn("[World] ANVIL 转换失败", "err", err)
+	}
+
+	return wm
 }
 
 // GetOrCreateChunk 获取区块，不存在则创建
@@ -51,10 +69,22 @@ func (wm *WorldManager) GetOrCreateChunk(chunkX, chunkZ int32) *Chunk {
 		return chunk
 	}
 
-	// 从存档加载或生成新区块
+	// 先尝试从存档加载
+	loaded, err := wm.loadChunkFromDisk(chunkX, chunkZ)
+	if err != nil {
+		slog.Warn("[World] 读取区块存档失败，回退到生成", "x", chunkX, "z", chunkZ, "err", err)
+	}
+	if loaded != nil {
+		wm.chunks[key] = loaded
+		slog.Info("[World] 从存档加载区块", "x", chunkX, "z", chunkZ)
+		return loaded
+	}
+
+	// 不存在存档，生成新区块
 	chunk = NewChunk(chunkX, chunkZ)
-	chunk.GenerateChunk() // 使用地形生成
+	chunk.GenerateChunk()
 	wm.chunks[key] = chunk
+	wm.dirtyChunks[key] = true // 新区块标记为脏，后续落盘
 
 	slog.Info("[World] 加载/生成区块", "x", chunkX, "z", chunkZ)
 	return chunk
@@ -96,7 +126,21 @@ func (wm *WorldManager) SetBlock(worldX, worldY, worldZ int32, blockID uint16) b
 		return false
 	}
 
+	oldState := chunk.Blocks[blockX][worldY][blockZ]
+	if oldState == blockID {
+		return false
+	}
+
 	chunk.Blocks[blockX][worldY][blockZ] = blockID
+
+	wm.mu.Lock()
+	wm.dirtyChunks[[2]int32{chunkX, chunkZ}] = true
+	wm.mu.Unlock()
+
+	if GlobalWorldSimulation != nil {
+		GlobalWorldSimulation.OnBlockChanged(worldX, worldY, worldZ, blockID)
+	}
+
 	return true
 }
 

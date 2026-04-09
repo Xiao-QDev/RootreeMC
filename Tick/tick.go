@@ -25,6 +25,8 @@ const (
 	MaxFallDistNoDmg = 3.0                 // 无伤掉落最大距离(方块)
 	TimeSyncInterval = 20                  // 每20tick同步一次时间(1秒)
 	SaveInterval     = int64(TPS * 60 * 5) // 每5分钟自动保存
+	WorldTickInterval = 2                  // 每2tick更新一次世界方块逻辑
+	WorldTickBudget   = 256                // 单次最多处理方块更新数量（保护TPS）
 )
 
 // TickMode tick运行模式
@@ -201,6 +203,11 @@ func runSingleTick() {
 	// 2. 玩家物理
 	processAllPlayerPhysics()
 
+	// 2.1 世界方块更新（液体、火焰）
+	if now%int64(WorldTickInterval) == 0 {
+		processWorldBlockUpdates()
+	}
+
 	// 3. Keep Alive超时检查 (每秒检查一次)
 	if now%int64(TPS) == 0 {
 		player.CheckKeepAliveTimeout()
@@ -209,6 +216,12 @@ func runSingleTick() {
 	// 4. 自动存档 (每5分钟)
 	if now%SaveInterval == 0 {
 		player.GlobalPlayerManager.SaveAllPlayers()
+		if err := world.GlobalWorld.SaveDirtyChunks(); err != nil {
+			slog.Warn("[Tick] 区块自动保存失败", slog.String("err", err.Error()))
+		}
+		if err := world.GlobalWorld.SaveBlockTickState(); err != nil {
+			slog.Warn("[Tick] 方块Tick自动保存失败", slog.String("err", err.Error()))
+		}
 		slog.Info("[Tick] 自动保存完成")
 	}
 
@@ -509,6 +522,41 @@ func tickPlayerPhysics(op *player.OnlinePlayer) {
 func checkOnGround(x, y, z float64) bool {
 	footY := y - 0.05 // 微低于脚底
 	return world.IsBlockSolid(x, footY, z)
+}
+
+// processWorldBlockUpdates 处理世界方块更新并向在线玩家广播变化
+func processWorldBlockUpdates() {
+	changes := world.GlobalWorldSimulation.Tick(WorldTickBudget)
+	if len(changes) == 0 {
+		return
+	}
+
+	allPlayers := player.GlobalPlayerManager.GetAllOnlinePlayers()
+	if len(allPlayers) == 0 {
+		return
+	}
+
+	byChunk := make(map[[2]int32][]world.BlockChange)
+	for _, c := range changes {
+		key := [2]int32{c.X >> 4, c.Z >> 4}
+		byChunk[key] = append(byChunk[key], c)
+	}
+
+	for key, chunkChanges := range byChunk {
+		var pkt []byte
+		if len(chunkChanges) == 1 {
+			one := chunkChanges[0]
+			pkt = world.BuildBlockChange(one.X, one.Y, one.Z, one.BlockID)
+		} else {
+			pkt = world.BuildMultiBlockChange(key[0], key[1], chunkChanges)
+		}
+
+		for _, p := range allPlayers {
+			if err := p.Client.Send(pkt); err != nil {
+				fmt.Printf("[Tick/World] 方块更新发送失败 to %s: %v\n", p.Username, err)
+			}
+		}
+	}
 }
 
 // ====== 服务端位置修正 ======

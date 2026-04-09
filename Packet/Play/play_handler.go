@@ -504,12 +504,12 @@ func HandlePlayerBlockPlacement(client *Network.Network, data []byte) {
 	}
 
 	// 放置方块（使用石头）
-	blockID := uint16(1) // Stone
-	if world.GlobalWorld.SetBlock(placeX, placeY, placeZ, blockID) {
-		fmt.Printf("[World] 放置方块: (%d,%d,%d) = %d\n", placeX, placeY, placeZ, blockID)
+	blockState := world.ToState(1, 0) // Stone (state = ID<<4|Meta)
+	if world.GlobalWorld.SetBlock(placeX, placeY, placeZ, blockState) {
+		fmt.Printf("[World] 放置方块: (%d,%d,%d) = state %d\n", placeX, placeY, placeZ, blockState)
 
 		// 发送方块更新给客户端
-		updatePkt := world.BuildBlockChange(placeX, placeY, placeZ, blockID)
+		updatePkt := world.BuildBlockChange(placeX, placeY, placeZ, blockState)
 		client.Send(updatePkt)
 	}
 }

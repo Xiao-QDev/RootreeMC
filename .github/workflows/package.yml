@@ -22,7 +22,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       release_tag: ${{ steps.version.outputs.release_tag }}
       release_name: ${{ steps.version.outputs.release_name }}
-      main_pkg: ${{ steps.main.outputs.main_pkg }}
+      main_dir: ${{ steps.main.outputs.main_dir }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -58,23 +58,37 @@ jobs:
           echo "release_tag=${VERSION}" >> "$GITHUB_OUTPUT"
           echo "release_name=RootreeMC ${VERSION}" >> "$GITHUB_OUTPUT"
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-
       - name: Detect main package
         id: main
         shell: bash
         run: |
           set -euo pipefail
-          MAIN_PKG="$(go list -f '{{if eq .Name "main"}}{{.ImportPath}}{{end}}' ./... | sed '/^$/d' | head -n 1 || true)"
-          if [[ -z "$MAIN_PKG" ]]; then
-            echo "::error::No main package found. Cannot build Linux/Windows executables."
+
+          MAIN_DIR_RAW="$(
+            git ls-files '*.go' \
+              | while IFS= read -r file; do
+                  if grep -Eq '^[[:space:]]*package[[:space:]]+main[[:space:]]*$' "$file"; then
+                    dirname "$file"
+                  fi
+                done \
+              | sort -u \
+              | head -n 1
+          )"
+
+          if [[ -z "$MAIN_DIR_RAW" ]]; then
+            echo "::error::No 'package main' file found. Cannot build Linux/Windows executables."
+            echo "::error::Tip: add an entrypoint like cmd/rootreemc/main.go"
             exit 1
           fi
-          echo "main_pkg=${MAIN_PKG}" >> "$GITHUB_OUTPUT"
-          echo "Main package: ${MAIN_PKG}"
+
+          if [[ "$MAIN_DIR_RAW" == "." ]]; then
+            MAIN_DIR="./"
+          else
+            MAIN_DIR="./${MAIN_DIR_RAW}"
+          fi
+
+          echo "main_dir=${MAIN_DIR}" >> "$GITHUB_OUTPUT"
+          echo "Main package directory: ${MAIN_DIR}"
 
   build-binaries:
     name: Build (${{ matrix.goos }}-${{ matrix.goarch }})
@@ -103,13 +117,13 @@ jobs:
       - name: Build binary
         shell: bash
         env:
-          MAIN_PKG: ${{ needs.resolve-version.outputs.main_pkg }}
+          MAIN_DIR: ${{ needs.resolve-version.outputs.main_dir }}
         run: |
           set -euo pipefail
           mkdir -p dist
           BIN_NAME="${APP_NAME}-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}"
           CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} \
-            go build -trimpath -ldflags "-s -w" -o "dist/${BIN_NAME}" "${MAIN_PKG}"
+            go build -trimpath -ldflags "-s -w" -o "dist/${BIN_NAME}" "${MAIN_DIR}"
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
