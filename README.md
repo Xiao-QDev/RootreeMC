@@ -19,6 +19,7 @@ Getting Started\
 ------
 Plugin Development [Wasm]\
 [插件开发指南]
+------
 * The Plugin a Development.
 ------
 * Thanks to [HKMC Cloud](https://cloud.hkmc.online/) for sponsoring this development!
