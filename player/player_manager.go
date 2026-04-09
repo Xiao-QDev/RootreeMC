@@ -3,7 +3,6 @@ package player
 
 import (
 	"RootreeMC/Network"
-	//"RootreeMC/Protocol"
 	"RootreeMC/entity"
 	"RootreeMC/inventory"
 	"encoding/json"
