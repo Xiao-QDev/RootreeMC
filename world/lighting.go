@@ -2,9 +2,6 @@
 package world
 
 import (
-	"RootreeMC/Network"
-	"RootreeMC/Protocol"
-	"bytes"
 	"sync"
 )
 
