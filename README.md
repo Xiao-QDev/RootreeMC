@@ -5,6 +5,8 @@ A Minecraft server core built for ultimate performance and cross-language extens
 [交流群与讨论]
 - [QQ Group](https://qm.qq.com/q/UtIAQdsfm0) or [Discord](https://discord.gg/ZjyZyjz)
 
+**神入Xiao_Q没传main.go，没有预编译版本了，得等几天**
+
 Getting Started\
 [快速上手RootreeMC]
 ------
