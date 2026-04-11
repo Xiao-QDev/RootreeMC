@@ -206,6 +206,13 @@ func (ai *DefaultMobAI) AttackTarget(mob *MobEntity) {
 		return
 	}
 
+	// 新增：攻击前实时验证视线
+	tx, ty, tz, ok := ai.getTargetPosition(mob)
+	if !ok || !ai.canSeePlayer(mob, tx, ty, tz) {
+		mob.TargetPlayer = nil
+		return
+	}
+
 	target := mob.TargetPlayer
 	target.Mu.RLock()
 	targetGamemode := target.Gamemode
