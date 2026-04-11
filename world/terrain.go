@@ -280,39 +280,16 @@ func newTerrainGenerator(seed int64) *terrainGenerator {
 	}
 }
 
-func vanillaDepthTransform(v float64) float64 {
-	if v < 0.0 {
-		v = -v * 0.3
-	}
-	v = v*3.0 - 2.0
-	if v < 0.0 {
-		v /= 2.0
-		if v < -1.0 {
-			v = -1.0
-		}
-		v /= 1.4
-		v /= 2.0
-	} else {
-		if v > 1.0 {
-			v = 1.0
-		}
-		v /= 8.0
-	}
-	return v
-}
-
 func (g *terrainGenerator) sampleFiveLayerNoise(wx, wz int) terrainNoiseSample {
 	x := float64(wx)
 	z := float64(wz)
 
-	// 对齐 1.12.2 的五层 Octaves 思路：大陆度深度噪声 + 地形细节噪声。
-	depthNoise := g.depth.Noise2D(x*0.001953125, z*0.001953125) / 8000.0 // 1/512
-	depth := vanillaDepthTransform(depthNoise)
-
-	detail := g.elevation.Noise2D(x*0.005, z*0.005) / 512.0
+	// 五层 Octaves 采样：保持与原版同层数，但把幅度缩放到可用地形区间。
+	macro := g.depth.Noise2D(x*0.001953125, z*0.001953125) / 128.0
+	detail := g.elevation.Noise2D(x*0.005, z*0.005) / 96.0
 
 	return terrainNoiseSample{
-		macro:  depth,
+		macro:  macro,
 		detail: detail,
 	}
 }
@@ -351,7 +328,7 @@ func (g *terrainGenerator) sampleColumn(wx, wz int) (int, biomeID) {
 	temp := g.temp.Noise2D(x*0.0009765625, z*0.0009765625) // 1/1024
 	hum := g.humidity.Noise2D(x*0.0009765625, z*0.0009765625)
 
-	biome := resolveBiomeByClimate(continental, temp, hum)
+	biome := resolveBiomeByClimate(temp, hum)
 	baseHeight, variation := biomeTerrainParams(biome)
 
 	// 将生物群系高度参数与五层噪声融合，贴近 Vanilla 高度分布。
@@ -369,40 +346,25 @@ func (g *terrainGenerator) sampleColumn(wx, wz int) (int, biomeID) {
 }
 
 func resolveBiome(height int, continental, temp, humidity float64) biomeID {
-	if continental < -0.55 {
+	baseBiome := resolveBiomeByClimate(temp, humidity)
+
+	// 海洋/海滩主要按最终高度决定，避免单一噪声偏移导致整图变海。
+	if height <= seaLevel-18 {
 		return biomeDeepOcean
 	}
-	if continental < -0.25 || height <= seaLevel-4 {
+	if height <= seaLevel-4 {
 		return biomeOcean
 	}
 	if height <= seaLevel+1 {
 		return biomeBeach
 	}
-	if height > 132 && continental > 0.25 {
+	if height > 142 || (height > 132 && continental > 0.25) {
 		return biomeMountains
 	}
-	if temp > 0.45 && humidity < 0.0 {
-		return biomeDesert
-	}
-	if temp > 0.30 && humidity > 0.20 {
-		return biomeJungle
-	}
-	if temp < -0.25 {
-		return biomeTaiga
-	}
-	if humidity > 0.15 {
-		return biomeForest
-	}
-	return biomePlains
+	return baseBiome
 }
 
-func resolveBiomeByClimate(continental, temp, humidity float64) biomeID {
-	if continental < -0.55 {
-		return biomeDeepOcean
-	}
-	if continental < -0.25 {
-		return biomeOcean
-	}
+func resolveBiomeByClimate(temp, humidity float64) biomeID {
 	if temp > 0.45 && humidity < 0.0 {
 		return biomeDesert
 	}
