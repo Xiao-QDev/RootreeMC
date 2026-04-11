@@ -10,6 +10,8 @@ import (
 	"sync"
 )
 
+const spawnSafetySearchRadius int32 = 96
+
 // WorldManager 管理所有加载的区块
 type WorldManager struct {
 	chunks     map[[2]int32]*Chunk // key: [chunkX, chunkZ]
@@ -106,7 +108,11 @@ func (wm *WorldManager) GetChunk(chunkX, chunkZ int32) *Chunk {
 
 // RecalculateSpawnPoint 重新计算世界出生点（原版风格搜索）
 func (wm *WorldManager) RecalculateSpawnPoint() {
-	x, y, z := FindVanillaSpawnPoint()
+	baseX, baseY, baseZ := FindVanillaSpawnPoint()
+	x, y, z, ok := wm.findNearestSafeSpawn(baseX, baseZ, spawnSafetySearchRadius)
+	if !ok {
+		x, y, z = baseX, baseY, baseZ
+	}
 
 	wm.mu.Lock()
 	wm.spawnX = x
@@ -122,6 +128,124 @@ func (wm *WorldManager) GetSpawnPoint() (int32, int32, int32) {
 	wm.mu.RLock()
 	defer wm.mu.RUnlock()
 	return wm.spawnX, wm.spawnY, wm.spawnZ
+}
+
+func worldToChunkAndBlock(world int32) (int32, int32) {
+	chunk := world / 16
+	block := world % 16
+	if block < 0 {
+		block += 16
+		chunk--
+	}
+	return chunk, block
+}
+
+func isSpawnPassableID(id uint16) bool {
+	switch id {
+	case 0, 6, 31, 32, 37, 38, 39, 40, 78, 175:
+		return true
+	default:
+		return false
+	}
+}
+
+func isSpawnGroundID(id uint16) bool {
+	switch id {
+	case 0, 6, 8, 9, 10, 11, 18, 31, 32, 37, 38, 39, 40, 50, 51, 65, 75, 76, 78, 175:
+		return false
+	default:
+		return true
+	}
+}
+
+func (wm *WorldManager) getBlockAutoLoad(worldX, worldY, worldZ int32) uint16 {
+	if worldY < 0 || worldY >= 256 {
+		return 0
+	}
+
+	chunkX, blockX := worldToChunkAndBlock(worldX)
+	chunkZ, blockZ := worldToChunkAndBlock(worldZ)
+	chunk := wm.GetOrCreateChunk(chunkX, chunkZ)
+	if chunk == nil {
+		return 0
+	}
+	return chunk.Blocks[blockX][worldY][blockZ]
+}
+
+// IsSafeSpawnAt 检查给定脚部坐标是否可作为安全出生点。
+func (wm *WorldManager) IsSafeSpawnAt(worldX, worldY, worldZ int32) bool {
+	if worldY < 1 || worldY >= 255 {
+		return false
+	}
+
+	groundID := GetID(wm.getBlockAutoLoad(worldX, worldY-1, worldZ))
+	feetID := GetID(wm.getBlockAutoLoad(worldX, worldY, worldZ))
+	headID := GetID(wm.getBlockAutoLoad(worldX, worldY+1, worldZ))
+	return isSpawnGroundID(groundID) && isSpawnPassableID(feetID) && isSpawnPassableID(headID)
+}
+
+func (wm *WorldManager) findSafeYAt(worldX, worldZ int32) (int32, bool) {
+	// 优先从地表附近向上下搜索，避免整列全扫。
+	height := int32(GetHeight(int(worldX), int(worldZ)) + 1)
+	if height < 1 {
+		height = 1
+	}
+	if height > 254 {
+		height = 254
+	}
+
+	for delta := int32(0); delta <= 32; delta++ {
+		up := height + delta
+		if up <= 254 && wm.IsSafeSpawnAt(worldX, up, worldZ) {
+			return up, true
+		}
+		down := height - delta
+		if down >= 1 && wm.IsSafeSpawnAt(worldX, down, worldZ) {
+			return down, true
+		}
+	}
+
+	for y := int32(254); y >= 1; y-- {
+		if wm.IsSafeSpawnAt(worldX, y, worldZ) {
+			return y, true
+		}
+	}
+	return 0, false
+}
+
+func (wm *WorldManager) findNearestSafeSpawn(startX, startZ, maxRadius int32) (int32, int32, int32, bool) {
+	if y, ok := wm.findSafeYAt(startX, startZ); ok {
+		return startX, y, startZ, true
+	}
+
+	for r := int32(1); r <= maxRadius; r++ {
+		minX, maxX := startX-r, startX+r
+		minZ, maxZ := startZ-r, startZ+r
+
+		for x := minX; x <= maxX; x++ {
+			if y, ok := wm.findSafeYAt(x, minZ); ok {
+				return x, y, minZ, true
+			}
+			if minZ != maxZ {
+				if y, ok := wm.findSafeYAt(x, maxZ); ok {
+					return x, y, maxZ, true
+				}
+			}
+		}
+
+		for z := minZ + 1; z <= maxZ-1; z++ {
+			if y, ok := wm.findSafeYAt(minX, z); ok {
+				return minX, y, z, true
+			}
+			if minX != maxX {
+				if y, ok := wm.findSafeYAt(maxX, z); ok {
+					return maxX, y, z, true
+				}
+			}
+		}
+	}
+
+	return 0, 0, 0, false
 }
 
 // SetBlock 设置方块

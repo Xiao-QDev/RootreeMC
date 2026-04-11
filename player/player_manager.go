@@ -8,6 +8,7 @@ import (
 	"RootreeMC/world"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sync"
@@ -129,6 +130,19 @@ func (pm *PlayerManager) PlayerJoin(client *Network.Network, username string, uu
 
 		// 给新玩家初始物品（Creative模式）
 		pm.giveStarterItems(&playerData.Inventory)
+	} else {
+		px := int32(math.Floor(playerData.Position.X))
+		py := int32(math.Floor(playerData.Position.Y))
+		pz := int32(math.Floor(playerData.Position.Z))
+		if !world.GlobalWorld.IsSafeSpawnAt(px, py, pz) {
+			spawnX, spawnY, spawnZ := world.GlobalWorld.GetSpawnPoint()
+			playerData.Position.X = float64(spawnX) + 0.5
+			playerData.Position.Y = float64(spawnY)
+			playerData.Position.Z = float64(spawnZ) + 0.5
+			playerData.Position.Yaw = 0
+			playerData.Position.Pitch = 0
+			fmt.Printf("[Player] 玩家 %s 上次位置不安全，已重置到出生点\n", username)
+		}
 	}
 
 	// 创建玩家实体
