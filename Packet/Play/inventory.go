@@ -116,16 +116,17 @@ func broadcastToAllPlayers(packet []byte) {
 // BuildItemEntityMetadata 构建物品实体的元数据包
 func BuildItemEntityMetadata(itemEntity *entity.ItemEntity) []byte {
 	buf := &bytes.Buffer{}
-	Network.WriteVarint(buf, 0x39) // Packet ID: Entity Metadata (1.12.2)
+	Network.WriteVarint(buf, 0x3C) // Packet ID: Entity Metadata (1.12.2)
 	Network.WriteVarint(buf, itemEntity.EID)
 	
 	// 构建元数据: Index 6, Type 5 (Slot)
 	buf.WriteByte(6) // Index
-	buf.WriteByte(5) // Type (Slot)
+	Network.WriteVarint(buf, 5) // Type (Slot)
 	
-	// Slot 数据格式: Item ID (VarInt) + Count (Byte) + NBT (Tag)
-	Network.WriteVarint(buf, itemEntity.Item.ItemID)
-	buf.WriteByte(byte(itemEntity.Item.Count))
+	// Slot 数据格式(1.12.2): ItemID(Short) + Count(Byte) + Damage(Short) + NBT(Tag)
+	binary.Write(buf, binary.BigEndian, int16(itemEntity.Item.ItemID))
+	buf.WriteByte(itemEntity.Item.Count)
+	binary.Write(buf, binary.BigEndian, itemEntity.Item.Damage)
 	
 	// NBT (空标签表示无NBT)
 	buf.WriteByte(0) // Tag ID: 0 (TAG_End)

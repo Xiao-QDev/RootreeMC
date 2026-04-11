@@ -68,6 +68,7 @@ func (em *EntityManager) CreateItemEntity(itemID int32, count int32, nbtData []b
 	}
 
 	em.entities[eid] = &itemEntity.Entity
+	em.items[eid] = itemEntity
 	fmt.Printf("[ItemEntity] 创建掉落物实体: EID=%d, ItemID=%d, Count=%d, Pos=(%.2f, %.2f, %.2f)\n", eid, itemID, count, x, y, z)
 
 	return eid
@@ -78,17 +79,11 @@ func (em *EntityManager) GetItemEntity(eid int32) *ItemEntity {
 	em.mu.RLock()
 	defer em.mu.RUnlock()
 
-	ent, ok := em.entities[eid]
-	if !ok || ent.Type != EntityTypeItem {
+	itemEntity, ok := em.items[eid]
+	if !ok {
 		return nil
 	}
-
-	// 我们知道底层是 ItemEntity
-	// 在 Go 中，如果 ItemEntity 嵌入了 Entity，我们可以通过不安全的方式或者
-	// 在创建时保存一个单独的 map 来解决这个问题。
-	// 这里我们暂时使用反射或类型断言的变通方案（虽然 Entity 不是 interface）。
-	// 修正方案：修改 entities map 存储 interface。
-	return nil
+	return itemEntity
 }
 
 // BuildSpawnItemEntity 生成掉落物实体包 (0x00)

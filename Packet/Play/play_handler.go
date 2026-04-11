@@ -354,18 +354,82 @@ func HandlePlayerDigging(client *Network.Network, data []byte) {
 
 	// 只在完成挖掘时破坏方块
 	if status == 2 {
+		p := player.GlobalPlayerManager.GetPlayerByClient(client)
+		canDrop := p != nil && p.PlayerEntity != nil && (p.PlayerEntity.Gamemode == 0 || p.PlayerEntity.Gamemode == 2)
+
 		// 获取当前方块
 		currentBlock := world.GlobalWorld.GetBlock(x, y, z)
 		if currentBlock != 0 { // 不是空气
 			// 设置为空气
 			if world.GlobalWorld.SetBlock(x, y, z, 0) {
-				fmt.Printf("[World] 破坏方块: (%d,%d,%d) 从 %d 变为空气\n", x, y, z, currentBlock)
-
-				// 发送方块更新给客户端
+				// 广播方块更新给所有在线玩家
 				updatePkt := world.BuildBlockChange(x, y, z, 0)
-				client.Send(updatePkt)
+				broadcastToAllPlayers(updatePkt)
+
+				if canDrop {
+					spawnBlockDropEntity(x, y, z, currentBlock)
+				}
 			}
 		}
+	}
+}
+
+func spawnBlockDropEntity(x, y, z int32, brokenState uint16) {
+	itemID, count, ok := getDropForBrokenBlock(brokenState)
+	if !ok || itemID <= 0 || count <= 0 {
+		return
+	}
+
+	eid := entity.GlobalEntityManager.CreateItemEntity(
+		itemID,
+		count,
+		nil,
+		float64(x)+0.5,
+		float64(y)+0.5,
+		float64(z)+0.5,
+		0.0, 0.08, 0.0,
+	)
+	if eid <= 0 {
+		return
+	}
+
+	itemEntity := entity.GlobalEntityManager.GetItemEntity(eid)
+	if itemEntity == nil {
+		return
+	}
+
+	broadcastToAllPlayers(entity.BuildSpawnItemEntity(itemEntity))
+	broadcastToAllPlayers(BuildItemEntityMetadata(itemEntity))
+}
+
+func getDropForBrokenBlock(state uint16) (itemID int32, count int32, ok bool) {
+	blockID := world.GetID(state)
+
+	switch blockID {
+	case 0, 7, 8, 9, 10, 11, 31, 32, 51, 59:
+		return 0, 0, false
+	case 1:
+		return 4, 1, true // Stone -> Cobblestone
+	case 2:
+		return 3, 1, true // Grass Block -> Dirt
+	case 16:
+		return 263, 1, true // Coal Ore -> Coal
+	case 56:
+		return 264, 1, true // Diamond Ore -> Diamond
+	case 73, 74:
+		return 331, 4, true // Redstone Ore -> Redstone Dust
+	case 62:
+		return 61, 1, true // Lit Furnace -> Furnace
+	case 63, 68:
+		return 323, 1, true // Sign block -> Sign item
+	case 64:
+		return 324, 1, true // Wooden Door block -> Door item
+	case 71:
+		return 330, 1, true // Iron Door block -> Door item
+	case 78:
+		return 332, 1, true // Snow layer -> Snowball
+	default:
+		return int32(blockID), 1, true
 	}
 }
 

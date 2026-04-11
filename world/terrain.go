@@ -257,76 +257,78 @@ func (o *octaveNoise) Noise2D(x, z float64) float64 {
 	return result
 }
 
+// Noise3D 五层 3D Octaves 采样（与 Noise2D 相同的频率/振幅递进）。
+func (o *octaveNoise) Noise3D(x, y, z float64) float64 {
+	result := 0.0
+	freq := 1.0
+	amp := 1.0
+	for i := 0; i < terrainLayers; i++ {
+		result += o.layers[i].Noise3D(x*freq, y*freq, z*freq) * amp
+		freq *= 2.0
+		amp *= 0.5
+	}
+	return result
+}
+
 // ----- 地形生成器 -----
 
 type terrainGenerator struct {
-	seed      int64
-	depth     octaveNoise
-	elevation octaveNoise
-	temp      octaveNoise
-	humidity  octaveNoise
-	flower    octaveNoise
+	seed          int64
+	noiseLow      octaveNoise
+	noiseHigh     octaveNoise
+	noiseSelector octaveNoise
+	detail        octaveNoise
+	temp          octaveNoise
+	humidity      octaveNoise
+	flower        octaveNoise
 }
 
 type terrainNoiseSample struct {
-	macro    float64
+	blended  float64
+	selector float64
 	detail   float64
 }
 
 func newTerrainGenerator(seed int64) *terrainGenerator {
 	r := newJavaRandom(seed)
 	return &terrainGenerator{
-		seed:      seed,
-		depth:     newOctaveNoise(r),
-		elevation: newOctaveNoise(r),
-		temp:      newOctaveNoise(r),
-		humidity:  newOctaveNoise(r),
-		flower:    newOctaveNoise(r),
+		seed:          seed,
+		noiseLow:      newOctaveNoise(r),
+		noiseHigh:     newOctaveNoise(r),
+		noiseSelector: newOctaveNoise(r),
+		detail:        newOctaveNoise(r),
+		temp:          newOctaveNoise(r),
+		humidity:      newOctaveNoise(r),
+		flower:        newOctaveNoise(r),
 	}
 }
 
-func (g *terrainGenerator) sampleFiveLayerNoise(wx, wz int) terrainNoiseSample {
+func (g *terrainGenerator) sampleVanilla112Noise(wx, wz int) terrainNoiseSample {
 	x := float64(wx)
 	z := float64(wz)
 
-	// 五层 Octaves 采样：保持与原版同层数，但把幅度缩放到可用地形区间。
-	macro := g.depth.Noise2D(x*0.001953125, z*0.001953125) / 128.0
-	detail := g.elevation.Noise2D(x*0.005, z*0.005) / 96.0
+	// 1.12 风格三噪声：Low / High / Selector。
+	low := g.noiseLow.Noise3D(x*(1.0/80.0), 0.0, z*(1.0/80.0)) * 1.6
+	high := g.noiseHigh.Noise3D(x*(1.0/60.0), 0.0, z*(1.0/60.0)) * 1.6
+	selectorRaw := g.noiseSelector.Noise3D(x*(1.0/500.0), 0.0, z*(1.0/500.0))
+	selector := (selectorRaw + 1.0) * 0.5
+	if selector < 0.0 {
+		selector = 0.0
+	}
+	if selector > 1.0 {
+		selector = 1.0
+	}
 
 	return terrainNoiseSample{
-		macro:  macro,
-		detail: detail,
-	}
-}
-
-func biomeTerrainParams(b biomeID) (baseHeight, variation float64) {
-	switch b {
-	case biomeDeepOcean:
-		return -1.8, 0.1
-	case biomeOcean:
-		return -1.0, 0.1
-	case biomeBeach:
-		return 0.0, 0.025
-	case biomePlains:
-		return 0.125, 0.05
-	case biomeForest:
-		return 0.1, 0.2
-	case biomeTaiga:
-		return 0.2, 0.2
-	case biomeDesert:
-		return 0.125, 0.05
-	case biomeJungle:
-		return 0.1, 0.2
-	case biomeMountains:
-		return 1.0, 0.5
-	default:
-		return 0.125, 0.05
+		blended:  low*(1.0-selector) + high*selector,
+		selector: selector,
+		detail:   g.detail.Noise3D(x*(1.0/25.0), 0.0, z*(1.0/25.0)),
 	}
 }
 
 func (g *terrainGenerator) sampleColumn(wx, wz int) (int, biomeID) {
-	ns := g.sampleFiveLayerNoise(wx, wz)
-	continental := ns.macro
+	ns := g.sampleVanilla112Noise(wx, wz)
+	continental := ns.blended / 2.5
 
 	x := float64(wx)
 	z := float64(wz)
@@ -337,8 +339,9 @@ func (g *terrainGenerator) sampleColumn(wx, wz int) (int, biomeID) {
 	biome := resolveBiomeByClimate(temp, hum)
 	baseHeight, variation := biomeTerrainParams(biome)
 
-	// 将生物群系高度参数与五层噪声融合，贴近 Vanilla 高度分布。
-	h := float64(seaLevel) + (baseHeight+continental*0.45)*32.0 + ns.detail*(variation*28.0+8.0)
+	// 兼顾性能与稳定性的原版风格高度混合。
+	h := float64(seaLevel) + 2.0 + baseHeight*20.0 + ns.blended*16.0 + (ns.selector-0.5)*6.0
+	h += ns.detail * (variation*8.0 + 3.0)
 
 	if h < minTerrainHeight {
 		h = minTerrainHeight
@@ -931,4 +934,29 @@ func IsBlockSolid(x, y, z float64) bool {
 func IsOnGround(x, y, z float64) bool {
 	// 检查脚下 0.05 格范围内是否有固体方块
 	return IsBlockSolid(x, y-0.05, z)
+}
+
+func biomeTerrainParams(b biomeID) (baseHeight, variation float64) {
+	switch b {
+	case biomeDeepOcean:
+		return -1.8, 0.1
+	case biomeOcean:
+		return -1.0, 0.1
+	case biomeBeach:
+		return 0.0, 0.025
+	case biomePlains:
+		return 0.125, 0.05
+	case biomeForest:
+		return 0.1, 0.2
+	case biomeTaiga:
+		return 0.2, 0.2
+	case biomeDesert:
+		return 0.125, 0.05
+	case biomeJungle:
+		return 0.1, 0.2
+	case biomeMountains:
+		return 1.0, 0.5
+	default:
+		return 0.125, 0.05
+	}
 }

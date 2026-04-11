@@ -59,6 +59,7 @@ type EntityManager struct {
 	nextEID  int32
 	entities map[int32]*Entity
 	players  map[int32]*PlayerEntity
+	items    map[int32]*ItemEntity // 掉落物实体
 	mobs     map[int32]*MobEntity // 生物实体
 	mu       sync.RWMutex
 }
@@ -76,6 +77,7 @@ func NewEntityManager() *EntityManager {
 		nextEID:  1,
 		entities: make(map[int32]*Entity),
 		players:  make(map[int32]*PlayerEntity),
+		items:    make(map[int32]*ItemEntity),
 		mobs:     make(map[int32]*MobEntity),
 	}
 }
@@ -269,8 +271,13 @@ func BuildEntityAnimation(eid int32, animationID byte) []byte {
  	defer em.mu.Unlock()
  	if player, ok := em.players[eid]; ok {
  		delete(em.players, eid)
+ 		delete(em.items, eid)
  		delete(em.entities, eid)
  		fmt.Printf("[Entity] 移除玩家实体: EID=%d, Username=%s\n", eid, player.Username)
+ 	} else if item, ok := em.items[eid]; ok {
+ 		delete(em.items, eid)
+ 		delete(em.entities, eid)
+ 		fmt.Printf("[Entity] 移除掉落物实体: EID=%d, ItemID=%d, Count=%d\n", eid, item.Item.ItemID, item.Item.Count)
  	} else if entity, ok := em.entities[eid]; ok {
  		delete(em.entities, eid)
  		fmt.Printf("[Entity] 移除实体: EID=%d, Type=%d\n", eid, entity.Type)
@@ -301,15 +308,10 @@ func (em *EntityManager) GetAllPlayers() []*PlayerEntity {
 func (em *EntityManager) GetAllItems() []*ItemEntity {
 	em.mu.RLock()
 	defer em.mu.RUnlock()
-	
-	items := make([]*ItemEntity, 0)
-	for _, ent := range em.entities {
-		// 检查实体类型
-		if ent.Type == EntityTypeItem {
-			// 这里需要更安全的类型转换方式
-			// 由于entities map存储的是*Entity，我们需要找到ItemEntity
-			// 临时解决方案：在ItemEntity中存储引用
-		}
+
+	items := make([]*ItemEntity, 0, len(em.items))
+	for _, item := range em.items {
+		items = append(items, item)
 	}
 	return items
 }
