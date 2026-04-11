@@ -273,7 +273,7 @@ func generateStructuresInChunk(chunk *Chunk, g *terrainGenerator) {
 			centerX := sx*16 + 8
 			centerZ := sz*16 + 8
 			height, biome := g.sampleColumn(centerX, centerZ)
-			if biome != biomePlains && biome != biomeDesert && biome != biomeTaiga {
+			if biome != biomePlains && biome != biomeSunflowerPlains && biome != biomeDesert && biome != biomeTaiga {
 				continue
 			}
 			generateVillageWell(chunk, centerX, centerZ, height+1, biome)

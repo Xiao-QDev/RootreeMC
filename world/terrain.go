@@ -53,6 +53,7 @@ const (
 	biomeOcean
 	biomeBeach
 	biomePlains
+	biomeSunflowerPlains
 	biomeForest
 	biomeTaiga
 	biomeDesert
@@ -246,10 +247,12 @@ func newOctaveNoise(r *javaRandom) octaveNoise {
 // Noise2D 对齐 Minecraft NoiseGeneratorOctaves#func_76304_a 的五层采样逻辑。
 func (o *octaveNoise) Noise2D(x, z float64) float64 {
 	result := 0.0
-	scale := 1.0
+	freq := 1.0
+	amp := 1.0
 	for i := 0; i < terrainLayers; i++ {
-		result += o.layers[i].Noise2D(x*scale, z*scale) / scale
-		scale /= 2.0
+		result += o.layers[i].Noise2D(x*freq, z*freq) * amp
+		freq *= 2.0
+		amp *= 0.5
 	}
 	return result
 }
@@ -262,6 +265,7 @@ type terrainGenerator struct {
 	elevation octaveNoise
 	temp      octaveNoise
 	humidity  octaveNoise
+	flower    octaveNoise
 }
 
 type terrainNoiseSample struct {
@@ -277,6 +281,7 @@ func newTerrainGenerator(seed int64) *terrainGenerator {
 		elevation: newOctaveNoise(r),
 		temp:      newOctaveNoise(r),
 		humidity:  newOctaveNoise(r),
+		flower:    newOctaveNoise(r),
 	}
 }
 
@@ -327,6 +332,7 @@ func (g *terrainGenerator) sampleColumn(wx, wz int) (int, biomeID) {
 	z := float64(wz)
 	temp := g.temp.Noise2D(x*0.0009765625, z*0.0009765625) // 1/1024
 	hum := g.humidity.Noise2D(x*0.0009765625, z*0.0009765625)
+	flower := g.flower.Noise2D(x*0.000732421875, z*0.000732421875)
 
 	biome := resolveBiomeByClimate(temp, hum)
 	baseHeight, variation := biomeTerrainParams(biome)
@@ -342,7 +348,11 @@ func (g *terrainGenerator) sampleColumn(wx, wz int) (int, biomeID) {
 	}
 
 	height := int(h + 0.5)
-	return height, resolveBiome(height, continental, temp, hum)
+	biome = resolveBiome(height, continental, temp, hum)
+	if shouldUseSunflowerPlains(biome, temp, hum, flower) {
+		biome = biomeSunflowerPlains
+	}
+	return height, biome
 }
 
 func resolveBiome(height int, continental, temp, humidity float64) biomeID {
@@ -380,6 +390,19 @@ func resolveBiomeByClimate(temp, humidity float64) biomeID {
 	return biomePlains
 }
 
+func shouldUseSunflowerPlains(b biomeID, temp, humidity, flowerNoise float64) bool {
+	if b != biomePlains {
+		return false
+	}
+	if temp < -0.10 || temp > 0.65 {
+		return false
+	}
+	if humidity < -0.05 || humidity > 0.45 {
+		return false
+	}
+	return flowerNoise > 0.22
+}
+
 func biomeName(b biomeID) string {
 	switch b {
 	case biomeDeepOcean:
@@ -390,6 +413,8 @@ func biomeName(b biomeID) string {
 		return "Beach"
 	case biomePlains:
 		return "Plains"
+	case biomeSunflowerPlains:
+		return "Sunflower Plains"
 	case biomeForest:
 		return "Forest"
 	case biomeTaiga:
@@ -487,7 +512,7 @@ func GetBiomeName(x, z int) string {
 
 func isSpawnBiome(b biomeID) bool {
 	switch b {
-	case biomePlains, biomeForest, biomeTaiga, biomeJungle:
+	case biomePlains, biomeSunflowerPlains, biomeForest, biomeTaiga, biomeJungle:
 		return true
 	default:
 		return false
@@ -566,6 +591,8 @@ type treeInfo struct {
 
 func treeChanceByBiome(b biomeID) float64 {
 	switch b {
+	case biomeSunflowerPlains:
+		return 0.0
 	case biomeForest:
 		return 0.18
 	case biomeTaiga:
