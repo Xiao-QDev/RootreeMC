@@ -43,14 +43,7 @@ const (
 	maxTerrainHeight    = 250
 	treeCellSize        = 4
 	defaultTerrainSeed  = int64(20260407)
-	macroNormFactor     = 1.0 / 1.5    // 1/(1+1/2)
-	detailNormFactor    = 1.0 / 0.4375 // 1/(1/4+1/8+1/16)
 	unitFloatNormalizer = 1.0 / (1 << 53)
-)
-
-var (
-	layerFrequency = [terrainLayers]float64{1.0 / 1024.0, 1.0 / 512.0, 1.0 / 256.0, 1.0 / 128.0, 1.0 / 64.0}
-	layerAmplitude = [terrainLayers]float64{1.0, 0.5, 0.25, 0.125, 0.0625}
 )
 
 type biomeID uint8
@@ -140,13 +133,24 @@ func lerp(t, a, b float64) float64 {
 	return a + t*(b-a)
 }
 
-func grad2(hash uint8, x, y float64) float64 {
-	h := hash & 7
-	u := x
-	v := y
-	if h >= 4 {
-		u, v = y, x
+func grad3(hash uint8, x, y, z float64) float64 {
+	h := hash & 15
+	var u float64
+	if h < 8 {
+		u = x
+	} else {
+		u = y
 	}
+
+	var v float64
+	if h < 4 {
+		v = y
+	} else if h == 12 || h == 14 {
+		v = x
+	} else {
+		v = z
+	}
+
 	if h&1 != 0 {
 		u = -u
 	}
@@ -158,61 +162,106 @@ func grad2(hash uint8, x, y float64) float64 {
 
 // ----- Perlin -----
 
+// PerlinNoise 对齐 Minecraft 1.12.2 ImprovedNoise（含随机坐标偏移）。
 type PerlinNoise struct {
-	p [512]uint8
+	p      [512]uint8
+	xCoord float64
+	yCoord float64
+	zCoord float64
 }
 
-func NewPerlinNoise(seed int64) PerlinNoise {
+func newPerlinNoiseFromJavaRandom(r *javaRandom) PerlinNoise {
 	var n PerlinNoise
-	var base [256]uint8
-	for i := 0; i < 256; i++ {
-		base[i] = uint8(i)
-	}
-
-	rng := splitMix64{state: uint64(seed)}
-	for i := 255; i > 0; i-- {
-		j := int(rng.next() % uint64(i+1))
-		base[i], base[j] = base[j], base[i]
-	}
+	n.xCoord = r.Float64() * 256.0
+	n.yCoord = r.Float64() * 256.0
+	n.zCoord = r.Float64() * 256.0
 
 	for i := 0; i < 256; i++ {
-		n.p[i] = base[i]
-		n.p[256+i] = base[i]
+		n.p[i] = uint8(i)
+	}
+	for i := 0; i < 256; i++ {
+		j := i + int(r.Intn(int32(256-i)))
+		n.p[i], n.p[j] = n.p[j], n.p[i]
+		n.p[256+i] = n.p[i]
 	}
 	return n
 }
 
-func (n *PerlinNoise) Noise2D(x, y float64) float64 {
+func (n *PerlinNoise) Noise3D(x, y, z float64) float64 {
+	x += n.xCoord
+	y += n.yCoord
+	z += n.zCoord
+
 	xi := fastFloor(x)
 	yi := fastFloor(y)
+	zi := fastFloor(z)
 
 	xf := x - float64(xi)
 	yf := y - float64(yi)
+	zf := z - float64(zi)
 
 	u := fade(xf)
 	v := fade(yf)
+	w := fade(zf)
 
 	X := xi & 255
 	Y := yi & 255
+	Z := zi & 255
 
-	aa := n.p[int(n.p[X])+Y]
-	ab := n.p[int(n.p[X])+Y+1]
-	ba := n.p[int(n.p[X+1])+Y]
-	bb := n.p[int(n.p[X+1])+Y+1]
+	A := int(n.p[X]) + Y
+	AA := int(n.p[A]) + Z
+	AB := int(n.p[A+1]) + Z
+	B := int(n.p[X+1]) + Y
+	BA := int(n.p[B]) + Z
+	BB := int(n.p[B+1]) + Z
 
-	x1 := lerp(u, grad2(aa, xf, yf), grad2(ba, xf-1.0, yf))
-	x2 := lerp(u, grad2(ab, xf, yf-1.0), grad2(bb, xf-1.0, yf-1.0))
+	return lerp(w,
+		lerp(v,
+			lerp(u, grad3(n.p[AA], xf, yf, zf), grad3(n.p[BA], xf-1.0, yf, zf)),
+			lerp(u, grad3(n.p[AB], xf, yf-1.0, zf), grad3(n.p[BB], xf-1.0, yf-1.0, zf)),
+		),
+		lerp(v,
+			lerp(u, grad3(n.p[AA+1], xf, yf, zf-1.0), grad3(n.p[BA+1], xf-1.0, yf, zf-1.0)),
+			lerp(u, grad3(n.p[AB+1], xf, yf-1.0, zf-1.0), grad3(n.p[BB+1], xf-1.0, yf-1.0, zf-1.0)),
+		),
+	)
+}
 
-	return lerp(v, x1, x2)
+func (n *PerlinNoise) Noise2D(x, z float64) float64 {
+	return n.Noise3D(x, 0.0, z)
+}
+
+type octaveNoise struct {
+	layers [terrainLayers]PerlinNoise
+}
+
+func newOctaveNoise(r *javaRandom) octaveNoise {
+	var o octaveNoise
+	for i := 0; i < terrainLayers; i++ {
+		o.layers[i] = newPerlinNoiseFromJavaRandom(r)
+	}
+	return o
+}
+
+// Noise2D 对齐 Minecraft NoiseGeneratorOctaves#func_76304_a 的五层采样逻辑。
+func (o *octaveNoise) Noise2D(x, z float64) float64 {
+	result := 0.0
+	scale := 1.0
+	for i := 0; i < terrainLayers; i++ {
+		result += o.layers[i].Noise2D(x*scale, z*scale) / scale
+		scale /= 2.0
+	}
+	return result
 }
 
 // ----- 地形生成器 -----
 
 type terrainGenerator struct {
-	seed     int64
-	layers   [terrainLayers]PerlinNoise
-	temp     PerlinNoise
-	humidity PerlinNoise
+	seed      int64
+	depth     octaveNoise
+	elevation octaveNoise
+	temp      octaveNoise
+	humidity  octaveNoise
 }
 
 type terrainNoiseSample struct {
@@ -221,37 +270,75 @@ type terrainNoiseSample struct {
 }
 
 func newTerrainGenerator(seed int64) *terrainGenerator {
-	rng := splitMix64{state: uint64(seed)}
-	g := &terrainGenerator{seed: seed}
-	for i := 0; i < terrainLayers; i++ {
-		g.layers[i] = NewPerlinNoise(int64(rng.next()))
+	r := newJavaRandom(seed)
+	return &terrainGenerator{
+		seed:      seed,
+		depth:     newOctaveNoise(r),
+		elevation: newOctaveNoise(r),
+		temp:      newOctaveNoise(r),
+		humidity:  newOctaveNoise(r),
 	}
-	g.temp = NewPerlinNoise(int64(rng.next()))
-	g.humidity = NewPerlinNoise(int64(rng.next()))
-	return g
+}
+
+func vanillaDepthTransform(v float64) float64 {
+	if v < 0.0 {
+		v = -v * 0.3
+	}
+	v = v*3.0 - 2.0
+	if v < 0.0 {
+		v /= 2.0
+		if v < -1.0 {
+			v = -1.0
+		}
+		v /= 1.4
+		v /= 2.0
+	} else {
+		if v > 1.0 {
+			v = 1.0
+		}
+		v /= 8.0
+	}
+	return v
 }
 
 func (g *terrainGenerator) sampleFiveLayerNoise(wx, wz int) terrainNoiseSample {
 	x := float64(wx)
 	z := float64(wz)
 
-	macro := 0.0
-	detail := 0.0
+	// 对齐 1.12.2 的五层 Octaves 思路：大陆度深度噪声 + 地形细节噪声。
+	depthNoise := g.depth.Noise2D(x*0.001953125, z*0.001953125) / 8000.0 // 1/512
+	depth := vanillaDepthTransform(depthNoise)
 
-	for i := 0; i < terrainLayers; i++ {
-		n := g.layers[i].Noise2D(x*layerFrequency[i], z*layerFrequency[i])
-		amp := layerAmplitude[i]
-		contrib := n * amp
-		if i < 2 {
-			macro += contrib
-		} else {
-			detail += contrib
-		}
-	}
+	detail := g.elevation.Noise2D(x*0.005, z*0.005) / 512.0
 
 	return terrainNoiseSample{
-		macro:    macro * macroNormFactor,
-		detail:   detail * detailNormFactor,
+		macro:  depth,
+		detail: detail,
+	}
+}
+
+func biomeTerrainParams(b biomeID) (baseHeight, variation float64) {
+	switch b {
+	case biomeDeepOcean:
+		return -1.8, 0.1
+	case biomeOcean:
+		return -1.0, 0.1
+	case biomeBeach:
+		return 0.0, 0.025
+	case biomePlains:
+		return 0.125, 0.05
+	case biomeForest:
+		return 0.1, 0.2
+	case biomeTaiga:
+		return 0.2, 0.2
+	case biomeDesert:
+		return 0.125, 0.05
+	case biomeJungle:
+		return 0.1, 0.2
+	case biomeMountains:
+		return 1.0, 0.5
+	default:
+		return 0.125, 0.05
 	}
 }
 
@@ -259,17 +346,16 @@ func (g *terrainGenerator) sampleColumn(wx, wz int) (int, biomeID) {
 	ns := g.sampleFiveLayerNoise(wx, wz)
 	continental := ns.macro
 
-	// Minecraft 风格：海平面附近 + 大尺度起伏 + 高频细节 + 陆地抬升
-	h := float64(seaLevel) + continental*34.0 + ns.detail*8.0
+	x := float64(wx)
+	z := float64(wz)
+	temp := g.temp.Noise2D(x*0.0009765625, z*0.0009765625) // 1/1024
+	hum := g.humidity.Noise2D(x*0.0009765625, z*0.0009765625)
 
-	if continental > 0.16 {
-		m := continental - 0.16
-		h += m * m * 65.0
-	}
-	if continental < -0.38 {
-		o := -0.38 - continental
-		h -= o * o * 90.0
-	}
+	biome := resolveBiomeByClimate(continental, temp, hum)
+	baseHeight, variation := biomeTerrainParams(biome)
+
+	// 将生物群系高度参数与五层噪声融合，贴近 Vanilla 高度分布。
+	h := float64(seaLevel) + (baseHeight+continental*0.45)*32.0 + ns.detail*(variation*28.0+8.0)
 
 	if h < minTerrainHeight {
 		h = minTerrainHeight
@@ -279,11 +365,6 @@ func (g *terrainGenerator) sampleColumn(wx, wz int) (int, biomeID) {
 	}
 
 	height := int(h + 0.5)
-	x := float64(wx)
-	z := float64(wz)
-	temp := g.temp.Noise2D(x/900.0, z/900.0)
-	hum := g.humidity.Noise2D(x/900.0, z/900.0)
-
 	return height, resolveBiome(height, continental, temp, hum)
 }
 
@@ -299,6 +380,28 @@ func resolveBiome(height int, continental, temp, humidity float64) biomeID {
 	}
 	if height > 132 && continental > 0.25 {
 		return biomeMountains
+	}
+	if temp > 0.45 && humidity < 0.0 {
+		return biomeDesert
+	}
+	if temp > 0.30 && humidity > 0.20 {
+		return biomeJungle
+	}
+	if temp < -0.25 {
+		return biomeTaiga
+	}
+	if humidity > 0.15 {
+		return biomeForest
+	}
+	return biomePlains
+}
+
+func resolveBiomeByClimate(continental, temp, humidity float64) biomeID {
+	if continental < -0.55 {
+		return biomeDeepOcean
+	}
+	if continental < -0.25 {
+		return biomeOcean
 	}
 	if temp > 0.45 && humidity < 0.0 {
 		return biomeDesert
