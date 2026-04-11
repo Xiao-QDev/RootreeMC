@@ -301,11 +301,5 @@ func generateStructuresInChunk(chunk *Chunk, g *terrainGenerator) {
 		}
 	}
 
-	// 废弃矿井：原版风格概率分布（入口简化版）
-	if shouldStartMineshaft(chunk.X, chunk.Z, seed) {
-		centerX := int(chunk.X)*16 + 8
-		centerZ := int(chunk.Z)*16 + 8
-		height, _ := g.sampleColumn(centerX, centerZ)
-		generateMineshaftEntrance(chunk, centerX, centerZ, height+1)
-	}
+	// 废弃矿井暂不写入地表模板，避免出现非原版木框入口。
 }
