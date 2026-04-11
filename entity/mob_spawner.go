@@ -8,6 +8,10 @@ import (
 	"time"
 )
 
+const (
+	NoCloseSpawnRadius = 24.0
+)
+
 // MobSpawner 生物刷怪器
 type MobSpawner struct {
 	SpawnInterval  time.Duration // 刷怪间隔
@@ -37,7 +41,7 @@ func NewMobSpawner() *MobSpawner {
 	spawner := &MobSpawner{
 		SpawnInterval: 10 * time.Second, // 每10秒尝试一次
 		MaxMobs:       50,               // 最多50个生物
-		SpawnRadius:   24,               // 在玩家24格范围内
+		SpawnRadius:   24,               // 默认生成在玩家24格半径附近
 		DespawnRadius: 128,              // 超过128格消失
 		lastSpawn:     time.Now(),
 	}
@@ -112,7 +116,15 @@ func (ms *MobSpawner) TrySpawnNearPlayer(p Player, allPlayers []Player) bool {
 
 	// 在玩家周围随机位置生成
 	angle := rand.Float64() * 2 * math.Pi
-	distance := 8 + rand.Float64()*16 // 8-24格距离
+	minDistance := NoCloseSpawnRadius
+	maxDistance := ms.SpawnRadius
+	if maxDistance < minDistance {
+		maxDistance = minDistance
+	}
+	distance := minDistance
+	if maxDistance > minDistance {
+		distance += rand.Float64() * (maxDistance - minDistance)
+	}
 
 	// 使用接口方法获取玩家位置
 	playerX, playerY, playerZ := p.GetPosition()
@@ -125,36 +137,39 @@ func (ms *MobSpawner) TrySpawnNearPlayer(p Player, allPlayers []Player) bool {
 	foundGround := false
 	if globalWorldProvider != nil {
 		for sy := int32(playerY) + 5; sy >= int32(playerY)-8; sy-- {
-			block := globalWorldProvider.GetBlock(bx, sy, bz)
-			if block != 0 { // 非空气方块
-				// 检查上方是否有 2 格空间
-				up1 := globalWorldProvider.GetBlock(bx, sy+1, bz)
-				up2 := globalWorldProvider.GetBlock(bx, sy+2, bz)
-				if up1 == 0 && up2 == 0 {
-					y = float64(sy + 1)
-					foundGround = true
-					break
-				}
+			// 必须是可站立的地面方块，避免在液体/草花等非实体方块上刷新
+			if !globalWorldProvider.IsBlockSolid(float64(bx)+0.5, float64(sy), float64(bz)+0.5) {
+				continue
+			}
+			// 检查上方是否有 2 格空间
+			up1 := globalWorldProvider.GetBlock(bx, sy+1, bz)
+			up2 := globalWorldProvider.GetBlock(bx, sy+2, bz)
+			if up1 == 0 && up2 == 0 {
+				y = float64(sy + 1)
+				foundGround = true
+				break
 			}
 		}
 	}
 
-	// 如果没找到地面且离玩家太远，可能是在虚空或未加载区块
-	if !foundGround && y < 1 {
+	// 用户要求必须在地面刷新
+	if !foundGround {
 		return false
 	}
 
-	// 亮度和高度限制（已放宽，确保玩家能看到生物生成）
-	if isHostileMob(mobType) {
-		// 只有在亮度为 0 的地方生成 (按用户要求)
-		if !isLightZero(bx, int32(y), bz) {
-			return false
-		}
+	// 用户要求：任何生物都必须在亮度 0 生成
+	if !isLightZero(bx, int32(y), bz) {
+		return false
+	}
 
-		// 高度检查
-		if y < 1 || y > 255 {
-			return false
-		}
+	// 高度检查
+	if y < 1 || y > 255 {
+		return false
+	}
+
+	// 禁止贴脸刷新：离任意玩家太近都不允许
+	if isPlayerTooClose(x, y, z, allPlayers, NoCloseSpawnRadius) {
+		return false
 	}
 
 	// 检查生成位置是否撞墙 (防止卡进墙里)
@@ -189,6 +204,21 @@ func (ms *MobSpawner) TrySpawnNearPlayer(p Player, allPlayers []Player) bool {
 		return true
 	}
 
+	return false
+}
+
+// isPlayerTooClose 检查刷新点是否离任意玩家过近
+func isPlayerTooClose(x, y, z float64, players []Player, minDistance float64) bool {
+	minDistanceSq := minDistance * minDistance
+	for _, p := range players {
+		px, py, pz := p.GetPosition()
+		dx := px - x
+		dy := py - y
+		dz := pz - z
+		if dx*dx+dy*dy+dz*dz < minDistanceSq {
+			return true
+		}
+	}
 	return false
 }
 

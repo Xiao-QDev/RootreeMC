@@ -3,33 +3,11 @@ package Tick
 
 import (
 	"RootreeMC/entity"
-	"fmt"
 )
 
 // processItemEntities 处理所有掉落物实体
 func processItemEntities() {
-	// 示例：每100tick创建一个测试掉落物
-	if GetWorldAge()%100 == 0 {
-		// 创建测试掉落物（钻石）
-		eid := entity.GlobalEntityManager.CreateItemEntity(
-			264, // ItemID
-			1,   // Count
-			nil, // 无NBT
-			8.5, 65.0, 8.5, // Pos
-			0, 0.2, 0,      // Velocity (向上抛出)
-		)
-		
-		if eid > 0 {
-			fmt.Printf("[Tick] 创建测试掉落物: EID=%d\n", eid)
-			
-			// 广播给所有玩家 (这里可能需要更完善的广播逻辑)
-			itemEnt := entity.GlobalEntityManager.GetItemEntity(eid)
-			if itemEnt != nil {
-				// 获取所有在线玩家并发送生成包
-				// 注意：这里可能需要引入 player 包，但为了避免循环依赖，建议在 Packet Manager 中处理
-			}
-		}
-	}
+	// 禁用测试掉落物自动生成；仅保留真实游戏行为产生的掉落物。
 }
 
 // SpawnItemEntity 生成掉落物实体（供外部调用）

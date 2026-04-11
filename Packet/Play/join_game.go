@@ -37,12 +37,17 @@ func BuildJoinGame(pkt *JoinGamePacket) []byte {
 }
 
 // BuildDefaultJoinGame 构建默认的加入游戏包（常用配置）
-// 参数: entityID - 玩家实体 ID
+// 参数: entityID - 玩家实体 ID, gamemode - 玩家游戏模式(0-3)
 // 返回: 使用默认配置的加入游戏包字节数据
-func BuildDefaultJoinGame(entityID int32) []byte {
+func BuildDefaultJoinGame(entityID int32, gamemode int32) []byte {
+	gm := byte(0)
+	if gamemode >= 0 && gamemode <= 3 {
+		gm = byte(gamemode)
+	}
+
 	return BuildJoinGame(&JoinGamePacket{
 		EntityID:         entityID,
-		Gamemode:         1,         // 创造模式（更容易测试）
+		Gamemode:         gm,
 		Dimension:        0,         // 主世界 (Overworld)
 		Difficulty:       2,         // 普通难度
 		MaxPlayers:       20,        // 最大 20 人

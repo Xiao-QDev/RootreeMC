@@ -25,6 +25,7 @@ var (
 func SendGameInitialization(client *Network.Network, username string, pUUID *Uuid.PlayerUUID, props []entity.PlayerProperty) {
 	// 使用 PlayerManager 处理玩家加入
 	p := player.GlobalPlayerManager.PlayerJoin(client, username, pUUID.Bytes(), props)
+	Tick.ClearPlayerDeathState(p.PlayerEntity.EID)
 
 	// 存储用户名以便聊天时使用
 	clientUserMu.Lock()
@@ -34,7 +35,7 @@ func SendGameInitialization(client *Network.Network, username string, pUUID *Uui
 	fmt.Printf("[Init] 玩家位置: (%.1f, %.1f, %.1f)\n", p.PlayerEntity.X, p.PlayerEntity.Y, p.PlayerEntity.Z)
 
 	// 1. 发送 Join Game 包
-	joinGamePkt := Play.BuildDefaultJoinGame(p.PlayerEntity.Entity.EID)
+	joinGamePkt := Play.BuildDefaultJoinGame(p.PlayerEntity.Entity.EID, p.PlayerEntity.Gamemode)
 	_ = client.Send(joinGamePkt)
 
 	// 1.1 发送难度包 (1.12.2 客户端必需)
@@ -53,7 +54,13 @@ func SendGameInitialization(client *Network.Network, username string, pUUID *Uui
 	}
 
 	// 4. 发送生命值/饱食度
-	healthPkt := Play.BuildFullHealth()
+	health := float32(20.0)
+	if meta, ok := p.PlayerEntity.Metadata[7]; ok {
+		if h, ok := meta.Value.(float32); ok {
+			health = h
+		}
+	}
+	healthPkt := Play.BuildUpdateHealth(health, 20, 5.0)
 	_ = client.Send(healthPkt)
 
 	// 5. 发送时间同步 (1.12.2 客户端必需，用于显示昼夜)
@@ -260,6 +267,8 @@ func HandlePlayPackets(client *Network.Network, packetID int32, packetData []byt
 		Play.HandlePlayerBlockPlacement(client, packetData)
 	case 0x09:
 		Play.HandleClientCapabilities(client, packetData)
+	case 0x0A: // Use Entity (attack/interact)
+		Play.HandleUseEntity(client, packetData)
 	case 0x0B: // Keep Alive (Serverbound)
 		Play.HandleKeepAlive(client, packetData)
 	case 0x0D: // Player Position (Serverbound)

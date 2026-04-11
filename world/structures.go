@@ -14,10 +14,18 @@ const (
 	stateOakPlanks   uint16 = 5 << 4
 	stateOakLog      uint16 = (17 << 4) | 0
 	stateSandstone   uint16 = 24 << 4
+	stateSandSmooth  uint16 = (24 << 4) | 2
+	stateSandChisel  uint16 = (24 << 4) | 1
 	stateFence       uint16 = 85 << 4
 	stateLadder      uint16 = (65 << 4) | 2
 	stateChest       uint16 = 54 << 4
 	stateTorch       uint16 = (50 << 4) | 5
+	stateOrangeWool  uint16 = (35 << 4) | 1
+	stateBlueWool    uint16 = (35 << 4) | 11
+	statePressurePlate uint16 = 70 << 4
+	stateTNT         uint16 = 46 << 4
+	stateStoneBrickChiseled uint16 = (98 << 4) | 3
+	stateLever       uint16 = (69 << 4) | 0
 )
 
 type javaRandom struct {

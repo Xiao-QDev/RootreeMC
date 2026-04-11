@@ -100,11 +100,11 @@ func NewEntityManager() *EntityManager {
  			OnGround: true,
  			Metadata: make(map[byte]EntityMetadata),
  		},
- 		UUID:     uuid,
- 		Username: username,
- 		Gamemode: 1, // Creative
- 		Properties: []PlayerProperty{},
- 	}
+		UUID:     uuid,
+		Username: username,
+		Gamemode: 0, // Survival
+		Properties: []PlayerProperty{},
+	}
  	
  	// 1.12.2 (Protocol 340) Player Metadata - 最小必需集合以提高稳定性
  	player.Metadata[0] = EntityMetadata{Index: 0, Type: 0, Value: byte(0)}      // Flags (Byte)

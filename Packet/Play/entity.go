@@ -3,33 +3,55 @@ package Play
 
 import (
 	"RootreeMC/Network"
+	"RootreeMC/entity"
+	"RootreeMC/player"
 	"bytes"
 	"encoding/binary"
-	"fmt"
 	"math"
 )
 
 // HandleUseEntity 处理使用实体（交互/攻击）
-// Packet ID: 0x0E (1.12.2)
+// Packet ID: 0x0A (1.12.2)
 func HandleUseEntity(client *Network.Network, data []byte) {
-	if len(data) < 10 {
+	if len(data) < 2 {
 		return
 	}
 
 	reader := bytes.NewReader(data)
 	targetID, _ := Network.ReadVarint(reader)
-	mouseButton, _ := Network.ReadVarint(reader) // 0=交互, 1=攻击
+	actionType, _ := Network.ReadVarint(reader) // 0=交互, 1=攻击, 2=交互(带坐标)
 
-	// 跳过坐标（如果有）
-	if mouseButton == 2 {
-		reader.Seek(12, 1) // 3个float64 = 24字节
+	// 只处理攻击动作
+	if actionType != 1 {
+		return
 	}
 
-	action := "交互"
-	if mouseButton == 1 {
-		action = "攻击"
+	attacker := player.GlobalPlayerManager.GetPlayerByClient(client)
+	if attacker == nil || attacker.PlayerEntity == nil {
+		return
 	}
-	fmt.Printf("[Play] 使用实体: target=%d, action=%s\n", targetID, action)
+
+	// 仅支持攻击生物实体
+	mob := entity.GlobalEntityManager.GetMob(targetID)
+	if mob == nil || mob.Health <= 0 {
+		return
+	}
+
+	// 简化近战伤害：每次 4 点
+	const baseAttackDamage = float32(4.0)
+	mob.Health -= baseAttackDamage
+	if mob.Health < 0 {
+		mob.Health = 0
+	}
+	mob.Metadata[7] = entity.EntityMetadata{Index: 7, Type: 2, Value: mob.Health}
+
+	if mob.Health <= 0 {
+		entity.GlobalEntityManager.RemoveMob(mob.EID)
+		destroyPkt := entity.BuildDestroyEntities([]int32{mob.EID})
+		for _, p := range player.GlobalPlayerManager.GetAllOnlinePlayers() {
+			_ = p.Client.Send(destroyPkt)
+		}
+	}
 }
 
 // HandleEntityMetadata 处理实体元数据更新
@@ -39,7 +61,7 @@ func HandleUseEntity(client *Network.Network, data []byte) {
 // HandleVehicleMove 处理载具移动
 // Packet ID: 0x16 (1.12.2)
 func HandleVehicleMove(client *Network.Network, data []byte) {
-	if len(data) < 25 {
+	if len(data) < 32 {
 		return
 	}
 
@@ -49,7 +71,11 @@ func HandleVehicleMove(client *Network.Network, data []byte) {
 	yaw := math.Float32frombits(binary.BigEndian.Uint32(data[24:28]))
 	pitch := math.Float32frombits(binary.BigEndian.Uint32(data[28:32]))
 
-	fmt.Printf("[Play] 载具移动: (%.2f, %.2f, %.2f), yaw=%.2f, pitch=%.2f\n", x, y, z, yaw, pitch)
+	_ = x
+	_ = y
+	_ = z
+	_ = yaw
+	_ = pitch
 }
 
 // BuildChangeGameState 构建改变游戏状态包 (0x1E)

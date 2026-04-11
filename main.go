@@ -172,6 +172,14 @@ func setTickMode(mode string) {
 
 func registerRuntimeCallbacks() {
 	entity.RegisterWorldProvider(mcWorldProvider{})
+	entity.RegisterPlayerDamageHandler(Tick.ApplyPlayerDamage)
+	entity.RegisterMobDestroyHandler(func(eid int32) {
+		pkt := entity.BuildDestroyEntities([]int32{eid})
+		allPlayers := player.GlobalPlayerManager.GetAllOnlinePlayers()
+		for _, p := range allPlayers {
+			_ = p.Client.Send(pkt)
+		}
+	})
 
 	world.RegisterBroadcastCallback(func(pkt []byte) {
 		allPlayers := player.GlobalPlayerManager.GetAllOnlinePlayers()

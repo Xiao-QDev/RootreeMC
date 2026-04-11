@@ -27,6 +27,10 @@ const (
 	SaveInterval     = int64(TPS * 60 * 5) // 每5分钟自动保存
 	WorldTickInterval = 2                  // 每2tick更新一次世界方块逻辑
 	WorldTickBudget   = 256                // 单次最多处理方块更新数量（保护TPS）
+	FireDamageIntervalTicks = TPS          // 火焰/岩浆：每秒结算一次伤害
+	FreezeDamageIntervalTicks = TPS * 2    // 冰冻：每2秒结算一次伤害
+	FireDamagePerTick       = 2.0          // 每次2点生命值
+	FreezeDamagePerTick     = 1.0          // 每次1点生命值
 )
 
 // TickMode tick运行模式
@@ -201,7 +205,7 @@ func runSingleTick() {
 	}
 
 	// 2. 玩家物理
-	processAllPlayerPhysics()
+	processAllPlayerPhysics(now)
 
 	// 2.1 世界方块更新（液体、火焰）
 	if now%int64(WorldTickInterval) == 0 {
@@ -304,6 +308,8 @@ type PlayerPhysics struct {
 var (
 	physMap = make(map[int32]*PlayerPhysics) // EID -> 物理
 	physMu  sync.RWMutex
+	deadPlayers = make(map[int32]bool)
+	deadMu      sync.Mutex
 )
 
 // getOrCreatePhysics 获取或创建玩家物理数据
@@ -337,10 +343,19 @@ func RemovePlayerPhysics(eid int32) {
 	physMu.Lock()
 	delete(physMap, eid)
 	physMu.Unlock()
+
+	ClearPlayerDeathState(eid)
+}
+
+// ClearPlayerDeathState 清理玩家死亡状态（玩家重连/离线时调用）
+func ClearPlayerDeathState(eid int32) {
+	deadMu.Lock()
+	delete(deadPlayers, eid)
+	deadMu.Unlock()
 }
 
 // processAllPlayerPhysics 处理所有在线玩家物理（支持单线程/多线程模式）
-func processAllPlayerPhysics() {
+func processAllPlayerPhysics(now int64) {
 	players := player.GlobalPlayerManager.GetAllOnlinePlayers()
 	
 	GlobalGameState.mu.RLock()
@@ -354,14 +369,14 @@ func processAllPlayerPhysics() {
 			wg.Add(1)
 			go func(player *player.OnlinePlayer) {
 				defer wg.Done()
-				tickPlayerPhysics(player)
+				tickPlayerPhysics(player, now)
 			}(p)
 		}
 		wg.Wait()
 	} else {
 		// 单线程模式：顺序处理
 		for _, p := range players {
-			tickPlayerPhysics(p)
+			tickPlayerPhysics(p, now)
 		}
 	}
 	
@@ -455,7 +470,7 @@ func processMobPhysics() {
 }
 
 // tickPlayerPhysics 单个玩家的物理tick
-func tickPlayerPhysics(op *player.OnlinePlayer) {
+func tickPlayerPhysics(op *player.OnlinePlayer, now int64) {
 	pe := op.PlayerEntity
 	phys := getOrCreatePhysics(pe.EID)
 
@@ -496,24 +511,12 @@ func tickPlayerPhysics(op *player.OnlinePlayer) {
 
 	phys.LastY = y
 
-	// === 4. 重力模拟及位置修正（已禁用：由客户端主导移动，防止拉回）===
-	// 仅在生存/冒险模式下进行逻辑检查，但不强制覆盖位置
+	// === 4. 生存/冒险模式伤害处理 ===
 	if pe.Gamemode == 1 || pe.Gamemode == 3 {
 		return // 创造/旁观不受重力影响
 	}
 
-	// 注意：在 Minecraft 中，客户端对自己的移动具有权威性。
-	// 服务端只需要跟踪状态（如 OnGround, FallDistance），而不应在每个 Tick 强制施加重力。
-	// 强制施加重力并发送位置修正会导致玩家在跳跃时被拉回。
-
-	/*
-		// 原有的重力模拟逻辑会导致拉回
-		if !onGround {
-			phys.Velocity.VY += Gravity
-			// ...
-			sendPositionCorrection(op)
-		}
-	*/
+	processEnvironmentalDamage(op, now)
 }
 
 // ====== 碰撞检测工具函数 ======
@@ -579,28 +582,162 @@ func sendPositionCorrection(op *player.OnlinePlayer) {
 	op.Client.Send(pkt)
 }
 
-// ====== 伤害系统（基础）=====
+// ====== 伤害系统 ======
 
 // applyFallDamage 施加掉落伤害
 func applyFallDamage(op *player.OnlinePlayer, damagePoints int) {
-	if damagePoints <= 0 {
+	if op == nil || op.PlayerEntity == nil || damagePoints <= 0 {
 		return
 	}
-	fallDist := float64(0)
-	physMu.RLock()
-	if p, ok := physMap[op.PlayerEntity.EID]; ok {
-		fallDist = p.FallDistance
+	ApplyPlayerDamage(op.PlayerEntity, float32(damagePoints), "fall")
+}
+
+// ApplyPlayerDamage 统一玩家伤害入口（仅生存/冒险）
+func ApplyPlayerDamage(target *entity.PlayerEntity, amount float32, cause string) (newHealth float32, dead bool) {
+	if target == nil || amount <= 0 {
+		return 0, false
 	}
-	physMu.RUnlock()
 
-	fmt.Printf("[Tick/Damage] 玩家 %s 掉落伤害: %d 点 (距离: %.1f 格)\n",
-		op.Username, damagePoints, fallDist)
+	target.Mu.Lock()
+	gamemode := target.Gamemode
+	if gamemode != 0 && gamemode != 2 {
+		current := float32(20.0)
+		if m, ok := target.Metadata[7]; ok {
+			if v, ok := m.Value.(float32); ok {
+				current = v
+			}
+		}
+		target.Mu.Unlock()
+		return current, false
+	}
 
-	// TODO: 后续接入完整伤害系统时：
-	//   1. 发送 Entity Damage 包 (Animation: hurt)
-	//   2. 更新生命值 Update Health 包
-	//   3. 死亡判定 (health <= 0 -> respawn screen)
-	//   4. 击退向量
+	healthMeta, ok := target.Metadata[7]
+	currentHealth := float32(20.0)
+	if ok {
+		if v, ok := healthMeta.Value.(float32); ok {
+			currentHealth = v
+		}
+	}
+
+	if currentHealth <= 0 {
+		target.Mu.Unlock()
+		return currentHealth, true
+	}
+
+	newHealth = currentHealth - amount
+	if newHealth < 0 {
+		newHealth = 0
+	}
+
+	healthMeta = entity.EntityMetadata{Index: 7, Type: 2, Value: newHealth}
+	target.Metadata[7] = healthMeta
+	target.Mu.Unlock()
+
+	online := getOnlinePlayerByEID(target.EID)
+	if online != nil {
+		_ = online.Client.Send(Play.BuildUpdateHealth(newHealth, 20, 5.0))
+	}
+
+	if newHealth <= 0 {
+		dead = true
+		if markDeadOnce(target.EID) && online != nil {
+			deathMsg := buildDeathMessage(online.Username, cause)
+			_ = online.Client.Send(Play.BuildCombatEventDeath(target.EID, -1, deathMsg))
+		}
+		return newHealth, true
+	}
+
+	ClearPlayerDeathState(target.EID)
+	return newHealth, false
+}
+
+func processEnvironmentalDamage(op *player.OnlinePlayer, now int64) {
+	if op == nil || op.PlayerEntity == nil {
+		return
+	}
+
+	pe := op.PlayerEntity
+	if now%FireDamageIntervalTicks == 0 && isInFireOrLava(pe.X, pe.Y, pe.Z) {
+		ApplyPlayerDamage(pe, FireDamagePerTick, "fire")
+	}
+	if now%FreezeDamageIntervalTicks == 0 && isInFreezingBlock(pe.X, pe.Y, pe.Z) {
+		ApplyPlayerDamage(pe, FreezeDamagePerTick, "freeze")
+	}
+}
+
+func isInFireOrLava(x, y, z float64) bool {
+	ids := [3]uint16{
+		getBlockIDAt(x, y-0.1, z),
+		getBlockIDAt(x, y+0.5, z),
+		getBlockIDAt(x, y+1.1, z),
+	}
+	for _, id := range ids {
+		if id == 10 || id == 11 || id == 51 {
+			return true
+		}
+	}
+	return false
+}
+
+func isInFreezingBlock(x, y, z float64) bool {
+	ids := [3]uint16{
+		getBlockIDAt(x, y-0.1, z),
+		getBlockIDAt(x, y+0.5, z),
+		getBlockIDAt(x, y+1.1, z),
+	}
+	for _, id := range ids {
+		// 冰 / 雪层 / 雪块 / 浮冰
+		if id == 78 || id == 79 || id == 80 || id == 174 {
+			return true
+		}
+	}
+	return false
+}
+
+func getBlockIDAt(x, y, z float64) uint16 {
+	bx := int32(math.Floor(x))
+	by := int32(math.Floor(y))
+	bz := int32(math.Floor(z))
+	if by < 0 || by > 255 {
+		return 0
+	}
+	state := world.GlobalWorld.GetBlock(bx, by, bz)
+	return world.GetID(state)
+}
+
+func getOnlinePlayerByEID(eid int32) *player.OnlinePlayer {
+	allPlayers := player.GlobalPlayerManager.GetAllOnlinePlayers()
+	for _, p := range allPlayers {
+		if p.PlayerEntity != nil && p.PlayerEntity.EID == eid {
+			return p
+		}
+	}
+	return nil
+}
+
+func markDeadOnce(eid int32) bool {
+	deadMu.Lock()
+	defer deadMu.Unlock()
+	if deadPlayers[eid] {
+		return false
+	}
+	deadPlayers[eid] = true
+	return true
+}
+
+func buildDeathMessage(username, cause string) string {
+	switch cause {
+	case "mob_attack":
+		return username + " was slain"
+	case "fall":
+		return username + " hit the ground too hard"
+	case "fire":
+		return username + " went up in flames"
+	case "freeze":
+		return username + " froze to death"
+	default:
+		return username + " died"
+	}
 }
 
 

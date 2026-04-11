@@ -22,6 +22,7 @@ type PlayerData struct {
 	Position  PlayerPosition
 	Inventory inventory.Inventory
 	Gamemode  int32
+	Health    float32
 	LastSeen  int64 // 时间戳
 }
 
@@ -124,7 +125,8 @@ func (pm *PlayerManager) PlayerJoin(client *Network.Network, username string, uu
 				Yaw: 0, Pitch: 0,
 			},
 			Inventory: *inventory.NewInventory(),
-			Gamemode:  1, // Creative
+			Gamemode:  0, // Survival
+			Health:    20.0,
 			LastSeen:  time.Now().Unix(),
 		}
 
@@ -145,6 +147,13 @@ func (pm *PlayerManager) PlayerJoin(client *Network.Network, username string, uu
 		}
 	}
 
+	if playerData.Health <= 0 || playerData.Health > 20 {
+		playerData.Health = 20.0
+	}
+	if playerData.Gamemode < 0 || playerData.Gamemode > 3 {
+		playerData.Gamemode = 0
+	}
+
 	// 创建玩家实体
 	playerEntity := entity.GlobalEntityManager.CreatePlayer(
 		username,
@@ -157,6 +166,8 @@ func (pm *PlayerManager) PlayerJoin(client *Network.Network, username string, uu
 	// 设置朝向
 	playerEntity.Yaw = playerData.Position.Yaw
 	playerEntity.Pitch = playerData.Position.Pitch
+	playerEntity.Gamemode = playerData.Gamemode
+	playerEntity.Metadata[7] = entity.EntityMetadata{Index: 7, Type: 2, Value: playerData.Health}
 	
 	// 设置皮肤属性
 	if len(props) > 0 {
@@ -294,6 +305,7 @@ func (pm *PlayerManager) savePlayerData(player *OnlinePlayer) {
 		},
 		Inventory: *player.Inventory,
 		Gamemode:  player.PlayerEntity.Gamemode,
+		Health:    getPlayerHealth(player.PlayerEntity),
 		LastSeen:  time.Now().Unix(),
 	}
 
@@ -438,4 +450,21 @@ func (p *OnlinePlayer) GetName() string {
 // SendPacket 发送数据包 (实现entity.Player接口)
 func (p *OnlinePlayer) SendPacket(data []byte) error {
 	return p.Client.Send(data)
+}
+
+func getPlayerHealth(pe *entity.PlayerEntity) float32 {
+	if pe == nil {
+		return 20.0
+	}
+	pe.Mu.RLock()
+	defer pe.Mu.RUnlock()
+	meta, ok := pe.Metadata[7]
+	if !ok {
+		return 20.0
+	}
+	health, ok := meta.Value.(float32)
+	if !ok {
+		return 20.0
+	}
+	return health
 }

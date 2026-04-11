@@ -6,7 +6,6 @@ import (
 	"RootreeMC/Protocol"
 	"RootreeMC/entity"
 	"RootreeMC/player"
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -83,7 +82,6 @@ func init() {
 	Register("give", handleGive)
 	Register("help", handleHelp)
 	Register("tps", handleTps)
-	Register("drop", handleDrop)
 	Register("spawn", handleSpawn)
 	Register("light", handleLight)
 }
@@ -209,7 +207,6 @@ func handleHelp(p *player.OnlinePlayer, args []string) bool {
 		"§e/give <item> [amount] §7- 给予物品",
 		"§e/spawn <mob> §7- 生成生物 (zombie, skeleton, creeper, spider, cow, pig, chicken, sheep)",
 		"§e/light §7- 更新玩家所在区块的光照",
-		"§e/drop §7- 丢弃一个钻石(测试用)",
 		"§e/tps §7- 显示服务器 TPS 性能指数",
 		"§e/help §7- 显示此帮助信息",
 	}
@@ -217,69 +214,6 @@ func handleHelp(p *player.OnlinePlayer, args []string) bool {
 	for _, line := range help {
 		SendMessage(p, line)
 	}
-	return true
-}
-
-// /drop - 丢弃一个钻石（测试用）
-func handleDrop(p *player.OnlinePlayer, args []string) bool {
-	// 创建钻石物品
-	_ = player.NewItemStack(264, 1) // 钻石
-
-	// 在玩家位置生成掉落物
-	posX := p.PlayerEntity.X
-	posY := p.PlayerEntity.Y
-	posZ := p.PlayerEntity.Z
-
-	// 随机偏移位置，避免直接生成在玩家体内
-	offsetX := (float64(p.PlayerEntity.EID%10) - 5.0) / 10.0
-	offsetZ := (float64(p.PlayerEntity.EID%7) - 3.5) / 10.0
-
-	eid := entity.GlobalEntityManager.CreateItemEntity(
-		264, // 钻石
-		1,   // 数量
-		nil, // 无NBT
-		posX+offsetX, posY, posZ+offsetZ,
-		0, 0.1, 0, // 微小的向上速度
-	)
-
-	if eid > 0 {
-		SendMessage(p, fmt.Sprintf("§e丢弃了钻石! 掉落物EID=%d", eid))
-		fmt.Printf("[Drop] 玩家 %s 丢弃物品: 钻石, EID=%d\n", p.Username, eid)
-
-		// 广播给所有玩家
-		itemEntity := entity.GlobalEntityManager.GetItemEntity(eid)
-		if itemEntity != nil {
-			// 1. 发送 Spawn Item Entity 包
-			spawnItemPkt := entity.BuildSpawnItemEntity(itemEntity)
-			allPlayers := player.GlobalPlayerManager.GetAllOnlinePlayers()
-			for _, onlineP := range allPlayers {
-				onlineP.Client.Send(spawnItemPkt)
-			}
-
-			// 2. 发送 Entity Metadata 包（设置物品堆叠）
-			metaBuf := &bytes.Buffer{}
-			Network.WriteVarint(metaBuf, 0x39) // Packet ID: Entity Metadata
-			Network.WriteVarint(metaBuf, itemEntity.EID)
-
-			// 元数据: Index 6, Type 5 (Slot)
-			metaBuf.WriteByte(6) // Index
-			metaBuf.WriteByte(5) // Type
-
-			// Slot数据
-			Network.WriteVarint(metaBuf, 264) // 钻石
-			metaBuf.WriteByte(1)              // Count
-			metaBuf.WriteByte(0)              // NBT: TAG_End
-			metaBuf.WriteByte(0xFF)           // 结束
-
-			metaPkt := Protocol.AddLengthPrefix(metaBuf)
-			for _, onlineP := range allPlayers {
-				onlineP.Client.Send(metaPkt)
-			}
-		}
-	} else {
-		SendMessage(p, "§c丢弃物品失败")
-	}
-
 	return true
 }
 
