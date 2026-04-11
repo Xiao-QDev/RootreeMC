@@ -5,6 +5,7 @@ import (
 	"RootreeMC/Network"
 	"RootreeMC/entity"
 	"RootreeMC/inventory"
+	"RootreeMC/world"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -110,12 +111,15 @@ func (pm *PlayerManager) PlayerJoin(client *Network.Network, username string, uu
 	// 加载或创建玩家数据
 	playerData := pm.loadPlayerData(uuidStr)
 	if playerData == nil {
+		spawnX, spawnY, spawnZ := world.GlobalWorld.GetSpawnPoint()
 		// 新玩家
 		playerData = &PlayerData{
 			Username: username,
 			UUID:     uuidStr,
 			Position: PlayerPosition{
-				X: 8.5, Y: 64, Z: 8.5,
+				X: float64(spawnX) + 0.5,
+				Y: float64(spawnY),
+				Z: float64(spawnZ) + 0.5,
 				Yaw: 0, Pitch: 0,
 			},
 			Inventory: *inventory.NewInventory(),

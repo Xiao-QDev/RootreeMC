@@ -340,7 +340,7 @@ func broadcastMovement(p *player.OnlinePlayer) {
 	}
 }
 
-// HandlePlayerDigging 处理玩家挖掘（优化：生成掉落物）
+// HandlePlayerDigging 处理玩家挖掘
 func HandlePlayerDigging(client *Network.Network, data []byte) {
 	if len(data) < 14 {
 		return
@@ -357,9 +357,6 @@ func HandlePlayerDigging(client *Network.Network, data []byte) {
 		// 获取当前方块
 		currentBlock := world.GlobalWorld.GetBlock(x, y, z)
 		if currentBlock != 0 { // 不是空气
-			// 获取方块ID
-			blockID := currentBlock >> 4
-
 			// 设置为空气
 			if world.GlobalWorld.SetBlock(x, y, z, 0) {
 				fmt.Printf("[World] 破坏方块: (%d,%d,%d) 从 %d 变为空气\n", x, y, z, currentBlock)
@@ -367,91 +364,7 @@ func HandlePlayerDigging(client *Network.Network, data []byte) {
 				// 发送方块更新给客户端
 				updatePkt := world.BuildBlockChange(x, y, z, 0)
 				client.Send(updatePkt)
-
-				// 生成掉落物（简化版本）
-				createBlockDrops(int32(blockID), x, y, z, client)
 			}
-		}
-	}
-}
-
-// createBlockDrops 创建方块破坏掉落物
-func createBlockDrops(blockID int32, x, y, z int32, client *Network.Network) {
-	// 获取玩家
-	p := player.GlobalPlayerManager.GetPlayerByClient(client)
-	if p == nil {
-		return
-	}
-
-	// 简单的掉落物规则
-	var dropItemID int32
-	var dropCount int32 = 1
-
-	switch blockID {
-	case 1: // 石头 -> 圆石
-		dropItemID = 4
-		fmt.Printf("[ItemDrop] 石头 -> 圆石在(%d,%d,%d)\n", x, y, z)
-	case 2: // 草方块 -> 泥土
-		dropItemID = 3
-		fmt.Printf("[ItemDrop] 草方块 -> 泥土在(%d,%d,%d)\n", x, y, z)
-	case 3: // 泥土
-		dropItemID = 3
-		fmt.Printf("[ItemDrop] 泥土在(%d,%d,%d)\n", x, y, z)
-	case 17: // 原木
-		dropItemID = 17
-		fmt.Printf("[ItemDrop] 原木在(%d,%d,%d)\n", x, y, z)
-	case 56: // 钻石矿 -> 钻石
-		dropItemID = 264
-		fmt.Printf("[ItemDrop] 钻石矿 -> 钻石在(%d,%d,%d)\n", x, y, z)
-	case 73, 74: // 红石矿
-		dropItemID = 331
-		dropCount = int32(4 + p.PlayerEntity.EID%3)
-		fmt.Printf("[ItemDrop] 红石矿 -> %d个红石在(%d,%d,%d)\n", dropCount, x, y, z)
-	case 129: // 绿宝石矿
-		dropItemID = 388
-		fmt.Printf("[ItemDrop] 绿宝石矿 -> 绿宝石在(%d,%d,%d)\n", x, y, z)
-	case 14: // 金矿
-		dropItemID = 266
-		fmt.Printf("[ItemDrop] 金矿 -> 金锭在(%d,%d,%d)\n", x, y, z)
-	case 15: // 铁矿
-		dropItemID = 265
-		fmt.Printf("[ItemDrop] 铁矿 -> 铁锭在(%d,%d,%d)\n", x, y, z)
-	case 16: // 煤矿
-		dropItemID = 263
-		fmt.Printf("[ItemDrop] 煤矿 -> 煤炭在(%d,%d,%d)\n", x, y, z)
-	default:
-		// 大多数方块直接掉落自身
-		dropItemID = blockID
-		fmt.Printf("[ItemDrop] 方块%d在(%d,%d,%d)\n", blockID, x, y, z)
-	}
-
-	// 在方块位置生成掉落物（稍微向上一点，避免卡在方块里）
-	if dropItemID > 0 && dropCount > 0 {
-		// 随机偏移，避免堆叠
-		offsetX := (float64(x%5) - 2.0) / 10.0
-		offsetZ := (float64(z%7) - 3.0) / 10.0
-
-		eid := entity.GlobalEntityManager.CreateItemEntity(
-			dropItemID,
-			dropCount,
-			nil, // 无NBT
-			float64(x)+0.5+offsetX, float64(y)+0.5, float64(z)+0.5+offsetZ,
-			0, 0.1, 0, // 微小的向上速度
-		)
-
-		if eid > 0 {
-			fmt.Printf("[BlockDrop] 生成掉落物实体: EID=%d, ItemID=%d, Count=%d\n", eid, dropItemID, dropCount)
-
-// 广播给所有玩家
-		itemEntity := entity.GlobalEntityManager.GetItemEntity(eid)
-		if itemEntity != nil {
-			spawnPkt := entity.BuildSpawnItemEntity(itemEntity)
-			broadcastToAllPlayers(spawnPkt)
-
-			// 发送Metadata
-			metaPkt := BuildItemEntityMetadata(itemEntity)
-			broadcastToAllPlayers(metaPkt)
-		}
 		}
 	}
 }

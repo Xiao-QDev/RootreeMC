@@ -55,6 +55,7 @@ func main() {
 	}
 
 	world.SetTerrainSeed(cfg.TerrainSeed)
+	world.GlobalWorld.RecalculateSpawnPoint()
 	slog.Info("[Main] 地形种子已加载", "seed", cfg.TerrainSeed)
 
 	registerRuntimeCallbacks()

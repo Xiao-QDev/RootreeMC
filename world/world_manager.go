@@ -15,6 +15,9 @@ type WorldManager struct {
 	chunks     map[[2]int32]*Chunk // key: [chunkX, chunkZ]
 	dirtyChunks map[[2]int32]bool
 	saveDir    string
+	spawnX     int32
+	spawnY     int32
+	spawnZ     int32
 	mu         sync.RWMutex
 }
 
@@ -44,6 +47,7 @@ func NewWorldManager() *WorldManager {
 	if err := wm.ConvertAnvilToLinearV2IfNeeded(); err != nil {
 		slog.Warn("[World] ANVIL 转换失败", "err", err)
 	}
+	wm.RecalculateSpawnPoint()
 
 	return wm
 }
@@ -98,6 +102,26 @@ func (wm *WorldManager) GetChunk(chunkX, chunkZ int32) *Chunk {
 	defer wm.mu.RUnlock()
 
 	return wm.chunks[key]
+}
+
+// RecalculateSpawnPoint 重新计算世界出生点（原版风格搜索）
+func (wm *WorldManager) RecalculateSpawnPoint() {
+	x, y, z := FindVanillaSpawnPoint()
+
+	wm.mu.Lock()
+	wm.spawnX = x
+	wm.spawnY = y
+	wm.spawnZ = z
+	wm.mu.Unlock()
+
+	slog.Info("[World] 已更新出生点", "x", x, "y", y, "z", z)
+}
+
+// GetSpawnPoint 返回当前世界出生点
+func (wm *WorldManager) GetSpawnPoint() (int32, int32, int32) {
+	wm.mu.RLock()
+	defer wm.mu.RUnlock()
+	return wm.spawnX, wm.spawnY, wm.spawnZ
 }
 
 // SetBlock 设置方块

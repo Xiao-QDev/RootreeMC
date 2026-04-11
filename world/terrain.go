@@ -420,6 +420,78 @@ func GetBiomeName(x, z int) string {
 	return biomeName(biome)
 }
 
+func isSpawnBiome(b biomeID) bool {
+	switch b {
+	case biomePlains, biomeForest, biomeTaiga, biomeJungle:
+		return true
+	default:
+		return false
+	}
+}
+
+// FindVanillaSpawnPoint 使用原版风格逻辑寻找出生点。
+func FindVanillaSpawnPoint() (int32, int32, int32) {
+	terrainMu.RLock()
+	g := terrain
+	terrainMu.RUnlock()
+
+	seedHash := mix64(uint64(g.seed) ^ 0x9e3779b97f4a7c15)
+	startX := int(int16(seedHash&0x1FF)) - 256
+	startZ := int(int16((seedHash>>9)&0x1FF)) - 256
+
+	const maxRadius = 256
+	for radius := 0; radius <= maxRadius; radius++ {
+		minX, maxX := startX-radius, startX+radius
+		minZ, maxZ := startZ-radius, startZ+radius
+
+		// 上下边
+		for x := minX; x <= maxX; x++ {
+			if y, ok := findSpawnYAt(g, x, minZ); ok {
+				return int32(x), int32(y), int32(minZ)
+			}
+			if minZ != maxZ {
+				if y, ok := findSpawnYAt(g, x, maxZ); ok {
+					return int32(x), int32(y), int32(maxZ)
+				}
+			}
+		}
+
+		// 左右边（去掉四角，避免重复）
+		for z := minZ + 1; z <= maxZ-1; z++ {
+			if y, ok := findSpawnYAt(g, minX, z); ok {
+				return int32(minX), int32(y), int32(z)
+			}
+			if minX != maxX {
+				if y, ok := findSpawnYAt(g, maxX, z); ok {
+					return int32(maxX), int32(y), int32(z)
+				}
+			}
+		}
+	}
+
+	fallbackHeight := GetHeight(0, 0) + 1
+	if fallbackHeight < 1 {
+		fallbackHeight = 1
+	}
+	if fallbackHeight > 255 {
+		fallbackHeight = 255
+	}
+	return 0, int32(fallbackHeight), 0
+}
+
+func findSpawnYAt(g *terrainGenerator, x, z int) (int, bool) {
+	height, biome := g.sampleColumn(x, z)
+	if !isSpawnBiome(biome) {
+		return 0, false
+	}
+
+	if height <= seaLevel || height >= 252 {
+		return 0, false
+	}
+
+	return height + 1, true
+}
+
 type treeInfo struct {
 	wx, wz, y int
 	log, leaf uint16
@@ -551,13 +623,16 @@ func (chunk *Chunk) GenerateChunk() {
 		}
 	}
 
-	// 2. 无接缝植被装饰（扫描边界延伸区域）
+	// 2. 结构生成（采用原版风格分布规则）
+	generateStructuresInChunk(chunk, g)
+
+	// 3. 无接缝植被装饰（扫描边界延伸区域）
 	trees := scanTreesInRegion(g, worldBaseX-5, worldBaseZ-5, worldBaseX+20, worldBaseZ+20)
 	for _, t := range trees {
 		renderTreeInChunk(chunk, t)
 	}
 
-	// 3. 小装饰 (草花, 甘蔗)
+	// 4. 小装饰 (草花, 甘蔗)
 	seedBase := uint64(g.seed) ^ 0xa24baed4963ee407
 	for lx := 0; lx < 16; lx++ {
 		for lz := 0; lz < 16; lz++ {

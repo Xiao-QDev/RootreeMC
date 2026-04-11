@@ -42,8 +42,8 @@ func SendGameInitialization(client *Network.Network, username string, pUUID *Uui
 	_ = client.Send(diffPkt)
 
 	// 2. 发送出生点位置
-	spawnHeight := world.GetHeight(8, 8)
-	spawnPosPkt := Play.BuildSpawnPosition(8, int32(spawnHeight), 8)
+	spawnX, spawnY, spawnZ := world.GlobalWorld.GetSpawnPoint()
+	spawnPosPkt := Play.BuildSpawnPosition(spawnX, spawnY, spawnZ)
 	_ = client.Send(spawnPosPkt)
 
 	// 3. 发送玩家能力 (根据游戏模式)
