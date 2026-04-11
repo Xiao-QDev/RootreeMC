@@ -85,7 +85,7 @@ func main() {
 	go func() {
 		<-sigChan
 		if shuttingDown.CompareAndSwap(false, true) {
-			slog.Warn("[Main] 收到退出信号，开始优雅停机")
+			slog.Warn("[Main] 收到退出信号，开始停机")
 			Tick.Stop()
 			_ = listener.Close()
 		}
