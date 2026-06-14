@@ -33,5 +33,5 @@ Plugin Development [Wasm]\
 ![Minecraft](https://img.shields.io/badge/Minecraft-1.12.2-62B47A?style=flat-square&logo=minecraft&logoColor=white)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue)](https://opensource.org/licenses/AGPL-3.0)
 ---------
-Developed by RootreeMC Team/
+Developed by RootreeMC Team /
 RootreeMC 将会停更一段时间可能是1年也可能是更久但是等我回来将会让RootreeMC成为性能与还原原版特性服务端的top1
